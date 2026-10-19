@@ -1,4 +1,4 @@
-// lispm-desktop-webext: the two places it reaches into Emacs's page views.
+// lispm-browser-webext: the two places it reaches into Emacs's page views.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -41,7 +41,7 @@ enum Hooks {
     private static func hookInit(of view: AnyClass) throws {
         let selector = NSSelectorFromString("initWithFrame:configuration:xwidget:")
         guard let method = class_getInstanceMethod(view, selector) else {
-            throw HookError(errorDescription: "This Emacs's WebKit pages are not made as lispm-desktop-webext knows")
+            throw HookError(errorDescription: "This Emacs's WebKit pages are not made as lispm-browser-webext knows")
         }
         // Self and the result are passed through untouched: an init method
         // takes and returns ownership, which ARC must not see.

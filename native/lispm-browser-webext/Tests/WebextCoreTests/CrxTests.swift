@@ -1,4 +1,4 @@
-// lispm-desktop-webext: tests of what needs no Emacs.
+// lispm-browser-webext: tests of what needs no Emacs.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -34,7 +34,7 @@ final class CrxTests: XCTestCase {
 
     func testUnpackedIDFollowsTheRealPath() throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lispm-desktop-webext-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("lispm-browser-webext-test-\(UUID().uuidString)", isDirectory: true)
         let folder = base.appendingPathComponent("extension", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -64,7 +64,7 @@ final class CrxTests: XCTestCase {
 final class FilesTests: XCTestCase {
     func testLinksLeadingOutAreTakenOutAndInsideKept() throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lispm-desktop-webext-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("lispm-browser-webext-test-\(UUID().uuidString)", isDirectory: true)
         let root = base.appendingPathComponent("extension", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -81,7 +81,7 @@ final class FilesTests: XCTestCase {
 
     func testReplaceSwapsAnExistingFolder() throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lispm-desktop-webext-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("lispm-browser-webext-test-\(UUID().uuidString)", isDirectory: true)
         let staged = base.appendingPathComponent("staged", isDirectory: true)
         let target = base.appendingPathComponent("target", isDirectory: true)
         try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)

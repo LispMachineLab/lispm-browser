@@ -158,7 +158,7 @@ public enum Crx {
     /// Unpacks a zip into `folder`, which is replaced whole.
     public static func unpack(_ zip: Data, into folder: URL) throws {
         let files = FileManager.default
-        let scratch = files.temporaryDirectory.appendingPathComponent("lispm-desktop-webext-crx-\(UUID().uuidString)")
+        let scratch = files.temporaryDirectory.appendingPathComponent("lispm-browser-webext-crx-\(UUID().uuidString)")
         try files.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? files.removeItem(at: scratch) }
         let archive = scratch.appendingPathComponent("x.zip")

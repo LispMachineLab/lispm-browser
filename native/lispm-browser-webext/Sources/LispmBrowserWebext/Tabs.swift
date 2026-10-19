@@ -6,7 +6,7 @@
 // own object, here it is a page view Emacs made: each one becomes a tab as
 // it is made (Hooks.swift), in the order made, and the browser's one
 // window holds them all.  Which one is in front Emacs says, as its windows
-// change (`lispm-desktop-webext-module-activate').
+// change (`lispm-browser-webext-module-activate').
 //
 // Copyright (c) 2026 Office Commun
 // Copyright (C) 2026  Ryan.K

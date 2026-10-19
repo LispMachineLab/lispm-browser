@@ -1,4 +1,4 @@
-// lispm-desktop-webext: tests of what extensions are given and told.
+// lispm-browser-webext: tests of what extensions are given and told.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -20,7 +20,7 @@ final class RulesTests: XCTestCase {
     /// An extension folder holding only `manifest`.
     private func extensionFolder(_ manifest: String) throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lispm-desktop-webext-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("lispm-browser-webext-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(manifest.utf8).write(to: folder.appendingPathComponent("manifest.json"))
         folders.append(folder)

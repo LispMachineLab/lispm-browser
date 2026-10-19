@@ -1,4 +1,4 @@
-// lispm-desktop-webext: Chrome extensions in lispm-desktop's browser, on macOS.
+// lispm-browser-webext: Chrome extensions in lispm-desktop's browser, on macOS.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -17,13 +17,13 @@
 // license is in LICENSE.Search.
 //
 // Emacs calls the functions below; the module calls back only through one
-// pipe (EmacsSwiftModule's Channel), as `lispm-desktop-webext--event' with a
+// pipe (EmacsSwiftModule's Channel), as `lispm-browser-webext--event' with a
 // kind and a JSON payload, since Emacs gives a module no way to call Lisp
 // on its own:
 //
 //   Lisp --functions--> module: install, run an action, which page is in front
-//   WebKit --delegate--> Host --channel--> (lispm-desktop-webext--event KIND JSON)
-//        questions and new tabs wait for (lispm-desktop-webext-module-answer ID VALUE)
+//   WebKit --delegate--> Host --channel--> (lispm-browser-webext--event KIND JSON)
+//        questions and new tabs wait for (lispm-browser-webext-module-answer ID VALUE)
 
 import AppKit
 import EmacsSwiftModule
@@ -34,7 +34,7 @@ final class WebextModule: Module {
 
     func Init(_ env: Environment) throws {
         try env.defun(
-            "lispm-desktop-webext-module-start",
+            "lispm-browser-webext-module-start",
             with: """
             Start the extension host, keeping extensions in DIRECTORY.
             Pages made from then on run them.  Return t.
@@ -42,7 +42,7 @@ final class WebextModule: Module {
             (fn DIRECTORY)
             """
         ) { (env: Environment, directory: String) throws -> Bool in
-            let channel = try env.openChannel(name: "lispm-desktop-webext")
+            let channel = try env.openChannel(name: "lispm-browser-webext")
             try MainActor.assumeIsolated {
                 try Host.start(directory: URL(fileURLWithPath: directory, isDirectory: true),
                                events: Events(channel: channel))
@@ -50,19 +50,19 @@ final class WebextModule: Module {
             return true
         }
         try env.defun(
-            "lispm-desktop-webext-module-stop",
+            "lispm-browser-webext-module-stop",
             with: "Stop calling Emacs back, as Emacs exits."
         ) { () in
             MainActor.assumeIsolated { Host.shared?.events.stop() }
         }
         try env.defun(
-            "lispm-desktop-webext-module-list",
+            "lispm-browser-webext-module-list",
             with: "Return the installed extensions, as a JSON array."
         ) { () -> String in
             MainActor.assumeIsolated { Host.shared?.listJSON() ?? "[]" }
         }
         try env.defun(
-            "lispm-desktop-webext-module-install-store",
+            "lispm-browser-webext-module-install-store",
             with: """
             Install the Chrome Web Store extension TEXT names, a store link or an id.
             The extension is fetched and its signature checked, then the user
@@ -74,7 +74,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.install(from: text) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-install-folder",
+            "lispm-browser-webext-module-install-folder",
             with: """
             Install the unpacked extension in folder PATH, a copy of it.
 
@@ -84,7 +84,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.installFolder(at: URL(fileURLWithPath: path, isDirectory: true)) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-reload",
+            "lispm-browser-webext-module-reload",
             with: """
             Load extension ID again, copied afresh from its folder if it came from one.
 
@@ -94,7 +94,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.reload(id) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-remove",
+            "lispm-browser-webext-module-remove",
             with: """
             Remove extension ID and what it kept.
 
@@ -104,7 +104,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.remove(id) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-set-enabled",
+            "lispm-browser-webext-module-set-enabled",
             with: """
             Turn extension ID on when ENABLED, else off.
 
@@ -114,7 +114,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.setEnabled(id, enabled) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-action",
+            "lispm-browser-webext-module-action",
             with: """
             Press extension ID's button for the page in front: its popup opens,
             or it is told it was clicked.  Return nil when it has no button.
@@ -125,7 +125,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.performAction(id) ?? false }
         }
         try env.defun(
-            "lispm-desktop-webext-module-options-url",
+            "lispm-browser-webext-module-options-url",
             with: """
             Return the address of extension ID's options page, or nil.
 
@@ -135,7 +135,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.optionsURL(id) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-expect-page",
+            "lispm-browser-webext-module-expect-page",
             with: """
             Return t when URL is the page of a running extension, which only a
             view made from that extension's configuration can show; the next
@@ -147,7 +147,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.expectPage(url) ?? false }
         }
         try env.defun(
-            "lispm-desktop-webext-module-activate",
+            "lispm-browser-webext-module-activate",
             with: """
             Tell extensions the page whose view is at ADDRESS is in front.
             ADDRESS is the view's address as an xwidget prints it.
@@ -158,7 +158,7 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.tabs.activate(address: address) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-answer",
+            "lispm-browser-webext-module-answer",
             with: """
             Answer question or request ID with VALUE: 1 or nil for a question,
             the address of the new page's view or nil for a new tab.
@@ -169,19 +169,19 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.answer(id, value) }
         }
         try env.defun(
-            "lispm-desktop-webext-module-close-popup",
+            "lispm-browser-webext-module-close-popup",
             with: "Close the extension popup that is up."
         ) { () in
             MainActor.assumeIsolated { Popup.shared.close() }
         }
-        try env.funcall("provide", with: Symbol(name: "lispm-desktop-webext-module"))
+        try env.funcall("provide", with: Symbol(name: "lispm-browser-webext-module"))
     }
 }
 
 func createModule() -> Module { WebextModule() }
 
 /// The way back to Emacs.  Each event becomes a call of
-/// `lispm-desktop-webext--event' with its kind and a JSON payload, made
+/// `lispm-browser-webext--event' with its kind and a JSON payload, made
 /// when Emacs reads the pipe.
 @MainActor
 final class Events {
@@ -199,7 +199,7 @@ final class Events {
         let data = try? JSONSerialization.data(withJSONObject: payload, options: [.fragmentsAllowed])
         let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         channel.withEnvironment { env in
-            try env.funcall("lispm-desktop-webext--event", with: kind, json)
+            try env.funcall("lispm-browser-webext--event", with: kind, json)
         }
     }
 

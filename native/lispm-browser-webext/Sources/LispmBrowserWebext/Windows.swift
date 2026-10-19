@@ -1,4 +1,4 @@
-// lispm-desktop-webext: the windows an extension opens of its own.
+// lispm-browser-webext: the windows an extension opens of its own.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -7,7 +7,7 @@
 // the extension's own: a wallet's approval of a transaction, a password
 // manager's vault, a hardware wallet's bridge.  Emacs's pages are no place
 // for it: Emacs on macOS cannot hand a page its keys (they reach a field
-// through JavaScript, see lispm-desktop-browser-hints.el), and a wallet's
+// through JavaScript, see lispm-browser-hints.el), and a wallet's
 // password wants real ones.  So such a window is a Mac window here, its page
 // taking the keyboard as any Mac app's would, and to WebKit it is a window
 // of its own with one tab: windows.remove closes it, closing it is

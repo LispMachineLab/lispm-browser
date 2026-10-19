@@ -48,7 +48,7 @@ enum ExtensionShims {
     /// patch is not here: a file that does nothing stands in its place, so
     /// that what names it still loads.
     nonisolated static let passkeys = "search-passkeys.js"
-    nonisolated static let passkeysStandIn = "/* Search's passkey patch stands here; lispm-desktop-webext has none. */\n"
+    nonisolated static let passkeysStandIn = "/* Search's passkey patch stands here; lispm-browser-webext has none. */\n"
     /// The first line of a worker that already carries the shim.
     nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
     nonisolated static let ender = "/* Search: end of shim */"
@@ -3572,7 +3572,7 @@ enum ExtensionShims {
         switch api {
         // MARK: what the browser keeps to itself
         // Its bookmarks and history are Emacs's (bookmark.el and
-        // lispm-desktop-browser-history-file), its downloads WebKit's; none
+        // lispm-browser-history-file), its downloads WebKit's; none
         // is shown to extensions yet, so they find them empty.
         case "bookmarks.getTree", "bookmarks.getSubTree", "bookmarks.getChildren", "bookmarks.get",
              "bookmarks.getRecent", "bookmarks.search", "history.search", "history.getVisits", "downloads.search",

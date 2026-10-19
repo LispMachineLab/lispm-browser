@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
 //
-// lispm-desktop-webext: Chrome extensions in lispm-desktop's browser, on
+// lispm-browser-webext: Chrome extensions in lispm-desktop's browser, on
 // macOS, as an Emacs dynamic module.
 //
 // Copyright (C) 2026  Ryan.K
@@ -9,12 +9,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "lispm-desktop-webext",
+    name: "lispm-browser-webext",
     // WKWebExtension, WebKit's extension engine, came with macOS 15.4.
     platforms: [.macOS("15.4")],
     products: [
-        // liblispm_desktop_webext.dylib, which lispm-desktop-browser-extensions.el loads.
-        .library(name: "lispm_desktop_webext", type: .dynamic, targets: ["LispmDesktopWebext"]),
+        // liblispm_browser_webext.dylib, which lispm-browser-extensions.el loads.
+        .library(name: "lispm_browser_webext", type: .dynamic, targets: ["LispmBrowserWebext"]),
     ],
     dependencies: [
         // The community's Swift binding of Emacs's module API.
@@ -31,12 +31,12 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
-            name: "LispmDesktopWebext",
+            name: "LispmBrowserWebext",
             dependencies: [
                 "WebextCore",
                 .product(name: "EmacsSwiftModule", package: "emacs-swift-module"),
             ],
-            path: "Sources/LispmDesktopWebext",
+            path: "Sources/LispmBrowserWebext",
             swiftSettings: [.swiftLanguageMode(.v5)],
             plugins: [.plugin(name: "ModuleFactoryPlugin", package: "emacs-swift-module")]
         ),

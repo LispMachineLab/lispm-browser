@@ -5,7 +5,7 @@
 // pages and files, `mayOpen`, `grants`, `describe` and `popupURL` are from
 // Sources/Search/Extensions.swift, `userAgentName` from Sources/Search/Tab.swift.
 // What Search answers itself (bookmarks, history and the other APIs WebKit
-// lacks) is left out, as lispm-desktop-webext doesn't answer them.
+// lacks) is left out, as lispm-browser-webext doesn't answer them.
 //
 // Copyright (c) 2026 Office Commun
 // SPDX-License-Identifier: MIT
@@ -149,7 +149,7 @@ public enum Rules {
     public nonisolated static func mayOpen(_ url: URL) throws {
         let scheme = url.scheme?.lowercased() ?? ""
         guard scheme != "javascript", scheme != "file" else {
-            throw NSError(domain: "lispm-desktop-webext", code: 1,
+            throw NSError(domain: "lispm-browser-webext", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Cannot navigate to a \(scheme): URL."])
         }
     }

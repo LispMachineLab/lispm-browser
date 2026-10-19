@@ -24,13 +24,13 @@ native:
 native-test:
 	cd native/lispm-desktop-term && cargo test --locked
 
-# lispm-desktop-browser-extensions's module: Chrome extensions in the
+# lispm-browser-extensions's module: Chrome extensions in the
 # browser's pages, on macOS, in Swift.  lispm-desktop builds it itself the
 # first time an extension is added, and again at a start that finds its
 # sources changed.
 webext:
-	cd native/lispm-desktop-webext && swift build -c release --product lispm_desktop_webext
+	cd native/lispm-browser-webext && swift build -c release --product lispm_browser_webext
 
 # The module's own tests, which need no Emacs.
 webext-test:
-	cd native/lispm-desktop-webext && swift test
+	cd native/lispm-browser-webext && swift test

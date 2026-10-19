@@ -696,11 +696,11 @@ final class Host: NSObject {
         if !records.isEmpty { await controller.removeData(ofTypes: types, from: records) }
         guard let base = URL(string: "\(Rules.scheme)://\(id)/") else { return }
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lispm-desktop-webext-forget-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("lispm-browser-webext-forget-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try Data(#"{"manifest_version": 3, "name": "lispm-desktop", "version": "1"}"#.utf8)
+            try Data(#"{"manifest_version": 3, "name": "lispm-browser", "version": "1"}"#.utf8)
                 .write(to: folder.appendingPathComponent("manifest.json"))
             let standIn = WKWebExtensionContext(for: try await WKWebExtension(resourceBaseURL: folder))
             standIn.uniqueIdentifier = id
@@ -712,7 +712,7 @@ final class Host: NSObject {
             guard await page.loadBlank(at: base) else { return }
             _ = try await page.web.callAsyncJavaScript(Host.forgetScript, contentWorld: .defaultClient)
         } catch {
-            NSLog("lispm-desktop-webext: couldn't clear what %@ kept: %@", id, error.localizedDescription)
+            NSLog("lispm-browser-webext: couldn't clear what %@ kept: %@", id, error.localizedDescription)
         }
     }
 
@@ -757,7 +757,7 @@ extension Host: WKWebExtensionControllerDelegate {
                                 openNewWindowUsing configuration: WKWebExtension.WindowConfiguration,
                                 for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionWindow)? {
         if configuration.shouldBePrivate {
-            throw NSError(domain: "lispm-desktop-webext", code: 2,
+            throw NSError(domain: "lispm-browser-webext", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "Private windows can't be opened by extensions."])
         }
         for url in configuration.tabURLs { try Rules.mayOpen(url) }
@@ -770,7 +770,7 @@ extension Host: WKWebExtensionControllerDelegate {
                 let scheme = url.scheme?.lowercased() ?? ""
                 guard scheme == "https" || scheme == "http" || ExtensionWindows.own(url, of: extensionContext)
                         || url.absoluteString == "about:blank" else {
-                    throw NSError(domain: "lispm-desktop-webext", code: 3,
+                    throw NSError(domain: "lispm-browser-webext", code: 3,
                                   userInfo: [NSLocalizedDescriptionKey: "A popup window shows a website or the extension's own page."])
                 }
             }
@@ -855,7 +855,7 @@ extension Host: WKWebExtensionControllerDelegate {
         if applicationIdentifier == nil || applicationIdentifier == ExtensionShims.application {
             return try await ExtensionShims.answer(message, from: extensionContext, owner: self)
         }
-        throw NSError(domain: "lispm-desktop-webext", code: 4,
+        throw NSError(domain: "lispm-browser-webext", code: 4,
                       userInfo: [NSLocalizedDescriptionKey: "Native messaging to apps is not available in this browser."])
     }
 
@@ -868,7 +868,7 @@ extension Host: WKWebExtensionControllerDelegate {
             return
         }
         if port.applicationIdentifier == ExtensionShims.application { return }
-        throw NSError(domain: "lispm-desktop-webext", code: 4,
+        throw NSError(domain: "lispm-browser-webext", code: 4,
                       userInfo: [NSLocalizedDescriptionKey: "Native messaging to apps is not available in this browser."])
     }
 }
