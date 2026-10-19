@@ -65,8 +65,8 @@ enum ExtensionShims {
     /// Whether the shim also tells what an extension writes to its
     /// console as errors and warnings (debug.error, listed with the
     /// extension's errors): Search's test runs, here an Emacs started with
-    /// LISPM_DESKTOP_WEBEXT_VERBOSE set, for finding out why one fails.
-    nonisolated static let verbose = ProcessInfo.processInfo.environment["LISPM_DESKTOP_WEBEXT_VERBOSE"] != nil
+    /// LISPM_BROWSER_WEBEXT_VERBOSE set, for finding out why one fails.
+    nonisolated static let verbose = ProcessInfo.processInfo.environment["LISPM_BROWSER_WEBEXT_VERBOSE"] != nil
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (verbose ? "-verbose" : "")
     }()

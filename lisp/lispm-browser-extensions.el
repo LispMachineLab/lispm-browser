@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026  Ryan.K
 
 ;; Author: Ryan.K
-;; URL: https://github.com/RyanKung/lispm
+;; URL: https://github.com/LispMachineLab/lispm-browser
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.
@@ -50,16 +50,10 @@
 (require 'subr-x)
 (require 'tabulated-list)
 (require 'url-util)
+(require 'lispm-browser)
 
 (declare-function xwidget-at "xwidget" (pos))
 (declare-function xwidget-buffer "xwidget.c" (xwidget))
-(declare-function lispm-browser--window "lispm-browser" ())
-(declare-function lispm-browser--shown-buffer "lispm-browser" ())
-(declare-function lispm-browser--uri "lispm-browser" (&optional buffer))
-(declare-function lispm-browser-show "lispm-browser" ())
-(declare-function lispm-browser-new-tab "lispm-browser" (&optional url))
-(declare-function lispm-browser-select-tab "lispm-browser" (buffer))
-(declare-function lispm-browser-close-tab "lispm-browser" (buffer))
 (declare-function lispm-browser-webext-module-start "lispm-browser-webext-module" (directory))
 (declare-function lispm-browser-webext-module-stop "lispm-browser-webext-module" ())
 (declare-function lispm-browser-webext-module-list "lispm-browser-webext-module" ())
@@ -77,7 +71,7 @@
 
 (defgroup lispm-browser-extensions nil
   "Chrome extensions in the browser's pages."
-  :group 'lispm-desktop)
+  :group 'lispm-browser)
 
 (defcustom lispm-browser-extensions-enabled t
   "Whether the browser's pages run Chrome extensions where Emacs can: on
@@ -240,8 +234,7 @@ Emacs on macOS prints an xwidget with that address."
   (let ((selected (window-buffer (selected-window))))
     (if (eq (buffer-local-value 'major-mode selected) 'xwidget-webkit-mode)
         selected
-      (and (fboundp 'lispm-browser--shown-buffer)
-           (lispm-browser--shown-buffer)))))
+      (lispm-browser-shown-buffer))))
 
 (defun lispm-browser-extensions--follow (&rest _)
   "Tell the extensions which page is in front.  The module tells WebKit only
@@ -314,7 +307,7 @@ for the user, or opens and closes pages, runs after it returns."
 (defun lispm-browser-extensions--open-tab (url active)
   "Open URL in a new browser tab, in front when ACTIVE; return the address of
 its view.  A running extension's page is shown by a view made for it."
-  (unless (or (not active) (lispm-browser--window))
+  (unless (or (not active) (lispm-browser-window))
     (lispm-browser-show))
   (let* ((own (lispm-browser-webext-module-expect-page url))
          ;; `xwidget-webkit-browse-url' takes an address whose scheme has a
@@ -344,8 +337,6 @@ its view.  A running extension's page is shown by a view made for it."
   (when-let* ((buffer (lispm-browser-extensions--buffer (plist-get payload :view))))
     (lispm-browser-close-tab buffer)))
 
-(defvar lispm-browser-search-url)
-(declare-function lispm-browser-open-url "lispm-browser" (url &optional new-tab))
 
 (defun lispm-browser-extensions--search (payload)
   "Search for the words in PAYLOAD with the browser's search engine, in a
@@ -359,7 +350,7 @@ new tab when it asks for one (chrome.search.query)."
 (defun lispm-browser-extensions--activate (payload)
   "Bring the tab of the page whose view PAYLOAD names in front."
   (when-let* ((buffer (lispm-browser-extensions--buffer (plist-get payload :view))))
-    (unless (lispm-browser--window)
+    (unless (lispm-browser-window)
       (lispm-browser-show))
     (lispm-browser-select-tab buffer)))
 
@@ -375,8 +366,7 @@ new tab when it asks for one (chrome.search.query)."
 
 (defun lispm-browser-extensions--shown-store-id ()
   "Return the id of the extension whose Chrome Web Store page the browser shows."
-  (and (fboundp 'lispm-browser--uri)
-       (lispm-browser-extensions--store-id (ignore-errors (lispm-browser--uri)))))
+  (lispm-browser-extensions--store-id (ignore-errors (lispm-browser-uri))))
 
 (defun lispm-browser-extensions--label (extension)
   "Return EXTENSION's name, with its button's badge when it shows one."
@@ -558,7 +548,7 @@ extension's button, then adding and managing them."
 
 ;;;; Setup
 
-(defun lispm-desktop-setup-browser-extensions ()
+(defun lispm-browser-extensions-setup ()
   "Run Chrome extensions in the browser's pages where Emacs can.
 The host starts at once when its module is built, so that every page runs
 them; the module is built in the background when extensions were added

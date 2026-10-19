@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
 //
-// lispm-browser-webext: Chrome extensions in lispm-desktop's browser, on
+// lispm-browser-webext: Chrome extensions in lispm-browser's pages, on
 // macOS, as an Emacs dynamic module.
 //
 // Copyright (C) 2026  Ryan.K

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026  Ryan.K
 
 ;; Author: Ryan.K
-;; URL: https://github.com/RyanKung/lispm
+;; URL: https://github.com/LispMachineLab/lispm-browser
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.
@@ -44,19 +44,14 @@
 (require 'seq)
 (require 'subr-x)
 (require 'json)
-(require 'lispm-desktop-core)
+(require 'lispm-browser)
 
 (declare-function xwidget-at "xwidget" (pos))
-(declare-function lispm-browser--window "lispm-browser" ())
-(declare-function lispm-browser--run-script "lispm-browser" (xwidget script &optional callback))
-(declare-function lispm-browser-new-tab "lispm-browser" (&optional url))
-(declare-function lispm-browser--sync "lispm-browser" (&optional force))
 (defvar xwidget-webkit-mode-map)
-(defvar lispm-browser-status-note)
 
 (defgroup lispm-browser-hints nil
   "Following links and typing in pages from the keyboard."
-  :group 'lispm-desktop)
+  :group 'lispm-browser)
 
 (defcustom lispm-browser-hint-characters "sadfjklewcmpgh"
   "The letters labels are made of, the easiest to type first."
@@ -248,7 +243,7 @@ It defines them once per document; every call to the page sends it first.")
 
 (defun lispm-browser--page-xwidget ()
   "Return the xwidget of the page the browser shows, or nil."
-  (when-let* ((window (lispm-browser--window)))
+  (when-let* ((window (lispm-browser-window)))
     (with-current-buffer (window-buffer window)
       (xwidget-at (point-min)))))
 
@@ -256,7 +251,7 @@ It defines them once per document; every call to the page sends it first.")
   "Evaluate CALL, a JavaScript expression using `__lme', in the shown page.
 CALLBACK, when given, is called with its value."
   (when-let* ((xwidget (lispm-browser--page-xwidget)))
-    (lispm-browser--run-script xwidget (concat lispm-browser--hints-script call) callback)))
+    (lispm-browser-run-script xwidget (concat lispm-browser--hints-script call) callback)))
 
 (defun lispm-browser--js (value)
   "Return VALUE written as a JavaScript literal."
@@ -266,16 +261,24 @@ CALLBACK, when given, is called with its value."
   "Turn `lispm-browser-typing-mode' on in the shown page when ARG is
 positive, else off.  Answers from the page come in whatever buffer is
 current, so the page's own buffer is named."
-  (when-let* ((window (lispm-browser--window)))
+  (when-let* ((window (lispm-browser-window)))
     (with-current-buffer (window-buffer window)
       (lispm-browser-typing-mode arg))))
 
 (defun lispm-browser--set-note (note)
   "Show NOTE in the browser's status bar instead of its page's state."
-  (when-let* ((window (lispm-browser--window)))
+  (when-let* ((window (lispm-browser-window)))
     (with-current-buffer (window-buffer window)
       (setq lispm-browser-status-note note))
     (force-mode-line-update t)))
+
+(defun lispm-browser--clipboard-text ()
+  "Return the text last killed or copied, from the system's clipboard
+when `interprogram-paste-function' reads it, or nil."
+  (ignore-errors (current-kill 0 t)))
+
+(defvar lispm-browser-clipboard-function #'lispm-browser--clipboard-text
+  "Function returning the text pasting in a page's field inserts, or nil.")
 
 ;;;; Hints
 
@@ -330,9 +333,9 @@ KEEP-PAGE leaves the page alone, as following a hint clears it itself."
           ((and (null (cdr matches)) (equal (car matches) typed))
            (lispm-browser--hints-end t)
            (lispm-browser--page-call (format "__lme.follow(%d, %s)"
-                                                     (seq-position labels typed)
-                                                     (if new-tab "true" "false"))
-                                             #'lispm-browser--followed))
+                                             (seq-position labels typed)
+                                             (if new-tab "true" "false"))
+                                     #'lispm-browser--followed))
           (t (setf (nth 1 lispm-browser--hints) typed)
              (lispm-browser--page-call (format "__lme.filter(%s)" (lispm-browser--js typed)))))))
 
@@ -343,7 +346,7 @@ KEEP-PAGE leaves the page alone, as following a hint clears it itself."
     (when (> (length typed) 0)
       (setf (nth 1 lispm-browser--hints) (substring typed 0 -1))
       (lispm-browser--page-call (format "__lme.filter(%s)"
-                                                (lispm-browser--js (nth 1 lispm-browser--hints)))))))
+                                        (lispm-browser--js (nth 1 lispm-browser--hints)))))))
 
 (defun lispm-browser--hint-map ()
   "Return the keymap held while hints are on the page: their letters, and
@@ -368,7 +371,7 @@ NEW-TAB opens the link chosen in a new tab."
       (setq lispm-browser--hints (list labels "" new-tab))
       (lispm-browser--page-call (format "__lme.show(%s)" (lispm-browser--js (vconcat labels))))
       (lispm-browser--set-note (if new-tab "Type a link's letters to open it in a new tab"
-                                         "Type the letters of a link, button or field"))
+                                 "Type the letters of a link, button or field"))
       (setq lispm-browser--hints-exit
             (set-transient-map (lispm-browser--hint-map)
                                (lambda ()
@@ -387,7 +390,7 @@ opens a link in a new tab."
   (lispm-browser--hints-end)
   (lispm-browser--typing -1)
   (lispm-browser--page-call "__lme.collect()"
-                                    (lambda (kinds) (lispm-browser--show-hints new-tab kinds))))
+                            (lambda (kinds) (lispm-browser--show-hints new-tab kinds))))
 
 (defun lispm-browser-follow-hint-new-tab ()
   "Label the links in sight, and open the one whose letters are typed in a
@@ -399,10 +402,10 @@ new tab."
   "Put the caret in the page's first field in sight, to type in it."
   (interactive)
   (lispm-browser--page-call "__lme.firstField()"
-                                    (lambda (result)
-                                      (if (equal result "field")
-                                          (lispm-browser--typing 1)
-                                        (message "No field in sight")))))
+                            (lambda (result)
+                              (if (equal result "field")
+                                  (lispm-browser--typing 1)
+                                (message "No field in sight")))))
 
 ;;;; Typing in a field
 
@@ -415,12 +418,12 @@ new tab."
   (interactive)
   (when (characterp last-command-event)
     (lispm-browser--type (format "__lme.insert(%s)"
-                                         (lispm-browser--js (string last-command-event))))))
+                                 (lispm-browser--js (string last-command-event))))))
 
 (defun lispm-browser-type-paste ()
   "Paste the clipboard at the caret of the page's field."
   (interactive)
-  (when-let* ((text (lispm-desktop-clipboard-text)))
+  (when-let* ((text (funcall lispm-browser-clipboard-function)))
     (lispm-browser--type (format "__lme.insert(%s)" (lispm-browser--js text)))))
 
 (defmacro lispm-browser--typing-command (name doc call)
@@ -431,27 +434,27 @@ new tab."
      (lispm-browser--type ,call)))
 
 (lispm-browser--typing-command lispm-browser-type-forward-char "Move the caret a character on."
-                                       "__lme.move('forward', 'character')")
+                               "__lme.move('forward', 'character')")
 (lispm-browser--typing-command lispm-browser-type-backward-char "Move the caret a character back."
-                                       "__lme.move('backward', 'character')")
+                               "__lme.move('backward', 'character')")
 (lispm-browser--typing-command lispm-browser-type-forward-word "Move the caret a word on."
-                                       "__lme.move('forward', 'word')")
+                               "__lme.move('forward', 'word')")
 (lispm-browser--typing-command lispm-browser-type-backward-word "Move the caret a word back."
-                                       "__lme.move('backward', 'word')")
+                               "__lme.move('backward', 'word')")
 (lispm-browser--typing-command lispm-browser-type-line-start "Move the caret to the line's start."
-                                       "__lme.move('backward', 'lineboundary')")
+                               "__lme.move('backward', 'lineboundary')")
 (lispm-browser--typing-command lispm-browser-type-line-end "Move the caret to the line's end."
-                                       "__lme.move('forward', 'lineboundary')")
+                               "__lme.move('forward', 'lineboundary')")
 (lispm-browser--typing-command lispm-browser-type-delete-backward "Delete the character before."
-                                       "__lme.kill('backward', 'character')")
+                               "__lme.kill('backward', 'character')")
 (lispm-browser--typing-command lispm-browser-type-delete-forward "Delete the character after."
-                                       "__lme.kill('forward', 'character')")
+                               "__lme.kill('forward', 'character')")
 (lispm-browser--typing-command lispm-browser-type-kill-word "Delete to the word's end."
-                                       "__lme.kill('forward', 'word')")
+                               "__lme.kill('forward', 'word')")
 (lispm-browser--typing-command lispm-browser-type-backward-kill-word "Delete to the word's start."
-                                       "__lme.kill('backward', 'word')")
+                               "__lme.kill('backward', 'word')")
 (lispm-browser--typing-command lispm-browser-type-kill-line "Delete to the line's end."
-                                       "__lme.kill('forward', 'lineboundary')")
+                               "__lme.kill('forward', 'lineboundary')")
 
 (defun lispm-browser-type-next-line ()
   "Move the caret a line down, or choose a menu's next option."
@@ -468,15 +471,15 @@ new tab."
 breaks the line, a button is pressed.  A field submitted is left."
   (interactive)
   (lispm-browser--page-call "__lme.enter()"
-                                    (lambda (result)
-                                      (unless (member result '("field" "select"))
-                                        (lispm-browser--typing -1)))))
+                            (lambda (result)
+                              (unless (member result '("field" "select"))
+                                (lispm-browser--typing -1)))))
 
 (defun lispm-browser--stepped (kind)
   "Keep typing when Tab went to a field, KIND being what it went to."
   (unless (member kind '("field" "select"))
     (lispm-browser--set-note (and (stringp kind) (not (equal kind "none"))
-                                          "Return presses it; Tab goes on, Escape leaves"))))
+                                  "Return presses it; Tab goes on, Escape leaves"))))
 
 (defun lispm-browser-type-next-field ()
   "Go to the page's next field, link or button, as Tab does in a browser."
@@ -535,7 +538,7 @@ typed in through JavaScript, as Emacs on macOS cannot hand it keys.
           "Typing in the page: Return submits, Tab goes on, Escape leaves"))
   (force-mode-line-update t))
 
-(defun lispm-desktop-setup-browser-hints ()
+(defun lispm-browser-hints-setup ()
   "Give pages the keys following their links and typing in their fields."
   (with-eval-after-load 'xwidget
     (keymap-set xwidget-webkit-mode-map "f" #'lispm-browser-follow-hint)

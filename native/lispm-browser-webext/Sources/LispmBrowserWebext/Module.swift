@@ -1,4 +1,4 @@
-// lispm-browser-webext: Chrome extensions in lispm-desktop's browser, on macOS.
+// lispm-browser-webext: Chrome extensions in lispm-browser's pages, on macOS.
 //
 // Copyright (C) 2026  Ryan.K
 // SPDX-License-Identifier: GPL-3.0-or-later
