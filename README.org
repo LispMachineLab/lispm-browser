@@ -12,12 +12,13 @@ the package name and prefix are all lowercase: ~lispm-browser~.
 
 * The LispM projects
 
-LispM is three projects, each a repository of its own under
+LispM is four projects, each a repository of its own under
 [[https://github.com/LispMachineLab][LispMachineLab]]:
 
 | [[https://github.com/LispMachineLab/lispm-agent][lispm-agent]]     | LispM Agent: AI agents that run inside Emacs, their conversations org documents, their tools Elisp |
 | [[https://github.com/LispMachineLab/lispm-desktop][lispm-desktop]]   | LispM Desktop: Emacs laid out as Mac OS 9's desktop, a workspace for agents, ready from the first start |
 | *lispm-browser*   | LispM Browser, this repository: a WebKit browser in Emacs, with tabs, keyboard hints and Chrome extensions |
+| [[https://github.com/LispMachineLab/lispm-store][lispm-store]]     | LispM Store: the catalog of applications, agents and skills LispM Desktop's App Store installs |
 
 Each stands on its own: the browser needs neither of the others, and the agents need no browser.
 LispM Desktop brings the two together, the agents in its sidebar and the browser as one of its
