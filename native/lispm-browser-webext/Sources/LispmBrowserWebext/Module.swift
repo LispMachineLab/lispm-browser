@@ -1,7 +1,7 @@
 // lispm-browser-webext: Chrome extensions in lispm-browser's pages, on macOS.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // WebKit runs Chrome extensions itself since macOS 15.4 (WKWebExtension,
 // the engine Safari's extensions run on), for any page view whose

@@ -1,7 +1,7 @@
 // lispm-browser-webext: the windows an extension opens of its own.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // windows.create opens a window, most often a small one showing a page of
 // the extension's own: a wallet's approval of a transaction, a password
