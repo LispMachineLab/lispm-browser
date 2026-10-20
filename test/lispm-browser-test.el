@@ -478,29 +478,239 @@ page when it is one, and the module is answered with its view."
 
 (ert-deftest lispm-browser-test-extensions-menu ()
   "The Extensions menu has each running extension's button, its badge in
-the label, then the Chrome Web Store, and adding the extension of the page
-shown when it is a store page."
+the label, Pin to Toolbar with each one checked when pinned, then the
+Chrome Web Store, adding the extension of the page shown when it is a
+store page, and managing them."
   (let ((lispm-browser-extensions--started t)
         (lispm-browser-extensions--installed
-         '((:id "a" :name "Blocker" :loaded t :badge "12" :actionEnabled t)
-           (:id "b" :name "Off" :enabled nil :loaded nil))))
-    (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id) #'ignore))
-      (let ((items (lispm-browser-extensions--menu-items)))
+         '((:id "a" :name "Blocker" :loaded t :badge "12" :actionEnabled t :pinned t)
+           (:id "b" :name "Off" :enabled nil :loaded nil)))
+        (pinned nil))
+    (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id) #'ignore)
+              ((symbol-function 'lispm-browser-webext-module-set-pinned)
+               (lambda (id on) (push (cons id on) pinned))))
+      (let* ((items (lispm-browser-extensions-menu-items))
+             (pins (plist-get (nth 2 items) :submenu)))
         (should (equal (plist-get (car items) :label) "Blocker [12]"))
         (should (eq (nth 1 items) 'separator))
-        (should (equal (plist-get (nth 2 items) :label) "Chrome Web Store"))
-        (should (eq (plist-get (nth 2 items) :action) 'lispm-browser-extensions-store))
-        (should (equal (plist-get (nth 3 items) :label) "Add This Extension"))
-        (should-not (plist-get (nth 3 items) :enabled))
+        (should (equal (plist-get (nth 2 items) :label) "Pin to Toolbar"))
+        (should (equal (mapcar (lambda (item) (plist-get item :label)) pins) '("Blocker")))
+        (should (plist-get (car pins) :checked))
+        (funcall (plist-get (car pins) :action))
+        (should (equal pinned '(("a"))))
+        (should (eq (nth 3 items) 'separator))
+        (should (equal (plist-get (nth 4 items) :label) "Chrome Web Store"))
+        (should (eq (plist-get (nth 4 items) :action) 'lispm-browser-extensions-store))
+        (should (equal (plist-get (nth 5 items) :label) "Add This Extension"))
+        (should-not (plist-get (nth 5 items) :enabled))
+        (should (eq (plist-get (car (last items)) :action) 'lispm-browser-extensions))
         (should-not (seq-find (lambda (item) (equal (plist-get item :label) "Off"))
                               (seq-filter #'consp items)))))
     (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id)
                (lambda () "ddkjiahejlhfcafbddmgiahcphecmpfh")))
-      (should (plist-get (nth 3 (lispm-browser-extensions--menu-items)) :enabled))))
+      (should (plist-get (nth 5 (lispm-browser-extensions-menu-items)) :enabled))))
   (let ((lispm-browser-extensions--started nil))
     (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id) #'ignore))
-      (should (equal (plist-get (car (lispm-browser-extensions--menu-items)) :label)
+      (should (equal (plist-get (car (lispm-browser-extensions-menu-items)) :label)
                      "Chrome Web Store")))))
+
+(ert-deftest lispm-browser-test-extensions-menus-as-emacs-menus ()
+  "A menu's items become a menu keymap of Emacs's: commands, functions,
+greyed items, check marks, separators and submenus."
+  (let* ((ran nil)
+         (map (lispm-browser-extensions--keymap-menu
+               "Extensions"
+               `((:label "Press" :action ,(lambda () (setq ran t)))
+                 (:label "Off" :action ignore :enabled nil)
+                 separator
+                 (:label "Pins" :submenu ((:label "One" :action ignore :checked t)))))))
+    (should (equal (keymap-prompt map) "Extensions"))
+    (pcase-let ((`(menu-item ,label ,command . ,props) (cdr (assq 'item-1 map))))
+      (should (equal label "Press"))
+      (should (commandp command))
+      (call-interactively command)
+      (should ran)
+      (should (eq (plist-get props :enable) t)))
+    (should-not (plist-get (nthcdr 3 (cdr (assq 'item-2 map))) :enable))
+    (should (equal (cdr (assq 'item-3 map)) menu-bar-separator))
+    (let ((pins (cdr (cdr (assq 'item-4 map)))))
+      (should (equal (plist-get (nthcdr 3 (cdr (assq 'item-1 pins))) :button) '(:toggle . t))))))
+
+(ert-deftest lispm-browser-test-extensions-buttons ()
+  "The toolbar shows the running extensions pinned to it, then one popped
+out while its popup is up or being opened; each button says what to draw."
+  (let ((lispm-browser-extensions--started t)
+        (lispm-browser-extensions--popped-out "c")
+        (lispm-browser-extensions--installed
+         '((:id "a" :name "Blocker" :label "Block ads" :loaded t :pinned t :badge "3"
+            :badgeColor "#123456" :actionEnabled t :popup t)
+           (:id "b" :name "Unpinned" :loaded t :badge "")
+           (:id "c" :name "Wallet" :loaded t :popup t)
+           (:id "d" :name "Up" :loaded t :popupShown t)
+           (:id "e" :name "Off" :loaded nil :pinned t))))
+    (let ((buttons (lispm-browser-extensions-buttons)))
+      (should (equal (mapcar (lambda (button) (plist-get button :id)) buttons) '("a" "c" "d")))
+      (should (equal (plist-get (car buttons) :name) "Block ads"))
+      (should (equal (plist-get (car buttons) :badge) "3"))
+      (should (equal (plist-get (car buttons) :badge-color) "#123456"))
+      (should (equal (plist-get (car buttons) :badge-text-color) "#FFFFFF"))
+      (should (plist-get (car buttons) :enabled))
+      (should (plist-get (nth 2 buttons) :open))
+      (should-not (plist-get (nth 1 buttons) :pinned)))
+    (let ((lispm-browser-extensions--started nil))
+      (should-not (lispm-browser-extensions-buttons)))))
+
+(ert-deftest lispm-browser-test-extensions-press-under-the-button ()
+  "Pressing hands the module the button's rectangle, with a page view of
+its frame; from the keyboard the anchor function says where the button
+is.  An unpinned extension pops out while its popup is up, and not when
+it has none."
+  (let ((lispm-browser-extensions--started t)
+        (lispm-browser-extensions--popped-out nil)
+        (lispm-browser-extensions--installed 'unread)
+        (list '((:id "a" :name "Pinned" :loaded t :pinned t)
+                (:id "b" :name "Unpinned" :loaded t)))
+        (popup nil)
+        (with-popups '("b"))
+        (pressed nil)
+        (asked nil)
+        (lispm-browser-extensions-changed-hook nil))
+    (cl-letf (((symbol-function 'lispm-browser-extensions--follow) #'ignore)
+              ((symbol-function 'lispm-browser-webext-module-list)
+               (lambda ()
+                 (json-encode (vconcat (mapcar (lambda (extension)
+                                                 (if (and popup (equal (plist-get extension :id) popup))
+                                                     (append extension '(:popupShown t))
+                                                   extension))
+                                               list)))))
+              ((symbol-function 'lispm-browser-extensions--frame-view) (lambda (_frame) 7))
+              ((symbol-function 'lispm-browser-webext-module-press)
+               (lambda (id anchor)
+                 (when (member id with-popups) (setq popup id))
+                 (push (cons id anchor) pressed)
+                 t)))
+      (lispm-browser-extensions-press "a" (list (selected-frame) 100 20 28 30))
+      (should (equal (json-parse-string (cdar pressed) :object-type 'alist)
+                     '((view . 7) (x . 100) (y . 20) (width . 28) (height . 30))))
+      (let ((lispm-browser-extensions-anchor-function
+             (lambda (id)
+               (push (cons id lispm-browser-extensions--popped-out) asked)
+               (list (selected-frame) 1 2 3 4))))
+        ;; Unpinned, with a popup: popped out before its place is asked.
+        (lispm-browser-extensions-press "b")
+        (should (equal (car asked) '("b" . "b")))
+        (should (equal lispm-browser-extensions--popped-out "b"))
+        (should (equal (caar pressed) "b"))
+        ;; Its popup down, it goes back.
+        (setq popup nil)
+        (lispm-browser-extensions--changed)
+        (should-not lispm-browser-extensions--popped-out)
+        ;; Without a popup it never stays.
+        (setq with-popups nil)
+        (lispm-browser-extensions-press "b")
+        (should-not lispm-browser-extensions--popped-out)
+        ;; Nowhere to hang from: the page's top right.
+        (let ((lispm-browser-extensions-anchor-function #'ignore))
+          (lispm-browser-extensions-press "a")
+          (should (equal (car pressed) '("a"))))))))
+
+(ert-deftest lispm-browser-test-extensions-click-anchors ()
+  "A click's anchor is the rectangle of what it was on, in its frame: a
+tab line's from the window's top left."
+  (let* ((window (selected-window))
+         (edges (window-pixel-edges window))
+         (event `(mouse-1 (,window tab-line (130 . 6) 0 nil nil (0 . 0) nil (10 . 4) (28 . 22)))))
+    (should (equal (lispm-browser-extensions-event-anchor event)
+                   (list (window-frame window) (+ (nth 0 edges) 120) (+ (nth 1 edges) 2) 28 22)))))
+
+(ert-deftest lispm-browser-test-extensions-tab-line-buttons ()
+  "The tab line ends with the toolbar's buttons and the Extensions button,
+flush right, each marked as the button it is."
+  (let ((lispm-browser-extensions--tab-line nil)
+        (buttons '((:id "a" :name "Blocker" :enabled t :badge "3"
+                    :badge-color "#D93025" :badge-text-color "#FFFFFF"))))
+    (cl-letf (((symbol-function 'lispm-browser-extensions-buttons) (lambda () buttons))
+              ((symbol-function 'string-pixel-width) #'length))
+      (let ((line (lispm-browser-extensions-tab-line-buttons)))
+        (should (string-match "B3" line))
+        (should (equal (get-text-property (match-beginning 0) 'lispm-browser-extensions-button line) "a"))
+        (should (string-match "🧩" line))
+        (should (eq (get-text-property (match-beginning 0) 'lispm-browser-extensions-button line) 'menu))
+        ;; The badge keeps its colours over the tab's face.
+        (should (memq 'tab-line-tab-inactive (ensure-list (get-text-property 0 'face (substring line 1)))))
+        (should (equal (get-text-property 0 'display line)
+                       `(space :align-to (- right (,(+ 7 lispm-browser-extensions-tab-line-margin))))))))))
+
+(ert-deftest lispm-browser-test-extensions-button-anchors ()
+  "A button is found where Emacs drew it, read from the row's right end:
+its rectangle in the frame, the row's height."
+  (let* ((window (selected-window))
+         (edges (window-pixel-edges window)))
+    (cl-letf (((symbol-function 'window-pixel-width) (lambda (&rest _) 100))
+              ((symbol-function 'lispm-browser-extensions--button-at)
+               (lambda (_window x y)
+                 (should (= y 12))
+                 (cond ((<= 80 x 89) 'menu) ((<= 60 x 79) "a") ((<= 10 x 20) "a")))))
+      (should (equal (lispm-browser-extensions-button-anchor window 2 20 "a")
+                     (list (window-frame window) (+ (nth 0 edges) 60) (+ (nth 1 edges) 2) 20 20)))
+      (should (equal (lispm-browser-extensions-button-anchor window 2 20 'menu)
+                     (list (window-frame window) (+ (nth 0 edges) 80) (+ (nth 1 edges) 2) 10 20)))
+      (should-not (lispm-browser-extensions-button-anchor window 2 20 "b")))))
+
+(ert-deftest lispm-browser-test-extensions-page-commands ()
+  "What the page of extensions asks is done as the commands do: removing
+asks nothing more, as the page asked; the store's button asks first."
+  (let ((calls nil))
+    (cl-letf (((symbol-function 'lispm-browser-webext-module-set-enabled)
+               (lambda (id on) (push (list 'enabled id on) calls)))
+              ((symbol-function 'lispm-browser-webext-module-remove)
+               (lambda (id) (push (list 'remove id) calls)))
+              ((symbol-function 'lispm-browser-extensions-remove)
+               (lambda (id) (push (list 'ask-remove id) calls)))
+              ((symbol-function 'lispm-browser-webext-module-set-pinned)
+               (lambda (id on) (push (list 'pinned id on) calls)))
+              ((symbol-function 'lispm-browser-extensions-install)
+               (lambda (id) (push (list 'install id) calls)))
+              ((symbol-function 'lispm-browser-open-url)
+               (lambda (url new-tab) (push (list 'open url new-tab) calls)))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) (error "Asked"))))
+      (dolist (command '("enable" "disable" "remove" "ask-remove" "pin" "unpin" "install" "store-page"))
+        (lispm-browser-extensions--command (list :command command :id "abc")))
+      (should (equal (reverse calls)
+                     `((enabled "abc" t) (enabled "abc" nil) (remove "abc") (ask-remove "abc")
+                       (pinned "abc" t) (pinned "abc" nil) (install "abc")
+                       (open ,(concat (string-remove-suffix "/" lispm-browser-extensions-store-url)
+                                      "/detail/abc")
+                             t))))
+      ;; An error is told, not raised from a timer.
+      (cl-letf (((symbol-function 'lispm-browser-extensions-reload) (lambda (_) (user-error "Gone")))
+                ((symbol-function 'message) (lambda (&rest args) (push (apply #'format args) calls))))
+        (lispm-browser-extensions--command '(:command "reload" :id "abc"))
+        (should (equal (car calls) "Gone"))))))
+
+(ert-deftest lispm-browser-test-extensions-page-opens-once ()
+  "The page of extensions opens in a new tab, or the tab showing it is
+shown again, at an extension's details when asked."
+  (let ((opened nil)
+        (shown nil)
+        (went nil)
+        (tabs nil))
+    (cl-letf (((symbol-function 'lispm-browser-extensions--ensure) #'funcall)
+              ((symbol-function 'lispm-browser-tabs) (lambda () tabs))
+              ((symbol-function 'lispm-browser-uri) (lambda (buffer) (and (eq buffer 'page) "lispm://extensions/")))
+              ((symbol-function 'lispm-browser-open-url)
+               (lambda (url new-tab) (push (list url new-tab) opened)))
+              ((symbol-function 'lispm-browser-window) #'always)
+              ((symbol-function 'lispm-browser-select-tab) (lambda (tab) (push tab shown)))
+              ((symbol-function 'xwidget-at) #'ignore)
+              ((symbol-function 'xwidget-webkit-goto-uri) (lambda (_ url) (push url went)))
+              (lispm-browser-raise-function #'ignore))
+      (lispm-browser-extensions)
+      (should (equal opened '(("lispm://extensions/" t))))
+      (setq tabs '(other page) opened nil)
+      (lispm-browser-extensions)
+      (should-not opened)
+      (should (equal shown '(page))))))
 
 (ert-deftest lispm-browser-test-extensions-store-opens-a-tab ()
   "The Chrome Web Store opens in a new tab, asking nothing."

@@ -125,6 +125,35 @@ final class WebextModule: Module {
             MainActor.assumeIsolated { Host.shared?.performAction(id) ?? false }
         }
         try env.defun(
+            "lispm-browser-webext-module-press",
+            with: """
+            Press extension ID's button for the page in front, as
+            `lispm-browser-webext-module-action' does, its popup hanging under
+            the button.  ANCHOR is a JSON object: the button's rectangle, "x",
+            "y", "width" and "height", in the pixels of the Emacs frame showing
+            the page whose view is at "view", from the frame's top left.  ANCHOR
+            nil hangs the popup from the page's top right.  Pressing the button
+            of the popup that is up closes it.  Return nil when the extension
+            has no button.
+
+            (fn ID ANCHOR)
+            """
+        ) { (id: String, anchor: String?) -> Bool in
+            MainActor.assumeIsolated {
+                Host.shared?.performAction(id, anchor: anchor.flatMap(Popup.Anchor.init(json:))) ?? false
+            }
+        }
+        try env.defun(
+            "lispm-browser-webext-module-set-pinned",
+            with: """
+            Pin extension ID's button to the toolbar when PINNED, else unpin it.
+
+            (fn ID PINNED)
+            """
+        ) { (id: String, pinned: Bool) in
+            MainActor.assumeIsolated { Host.shared?.setPinned(id, pinned) }
+        }
+        try env.defun(
             "lispm-browser-webext-module-options-url",
             with: """
             Return the address of extension ID's options page, or nil.

@@ -29,15 +29,31 @@
 ;; Emacs makes its page views itself, so the module lispm-browser-webext
 ;; (Swift, in native/lispm-browser-webext) hands each one the controller as
 ;; it is made, and hosts the extensions: the browser's pages are their tabs,
-;; their popups hang from the page in front, and their questions are asked
+;; their popups hang from their buttons, and their questions are asked
 ;; here.  Most of the module is ported from Search, a WebKit browser for
 ;; macOS, with the script Search puts in every extension to fill in the
 ;; Chrome APIs WebKit lacks, so that heavy ones such as the Rabby wallet run;
 ;; a window an extension opens of its own is a Mac window.
 ;;
-;;   Chrome Web Store link --install--> fetched, signature checked, asked, loaded
-;;   M-e, an extension's button   --->  its popup, or its click
-;;   Extensions menu, M-x lispm-browser-extensions: the list of them
+;; They are used as in Chrome:
+;;
+;;   toolbar        a button per pinned extension, its icon and badge, then
+;;                  the Extensions button, a puzzle piece, with the menu of
+;;                  them all: press one, pin it, manage them
+;;   a button       its popup hangs under it, or it is told it was clicked
+;;   lispm://extensions   the page of them, in a tab: turn one on or off,
+;;                  see what it may do, reload it, remove it, add one
+;;   the store      "Add to LispM" on an extension's Chrome Web Store page:
+;;                  fetched, signature checked, asked, loaded
+;;
+;; and from the keyboard: M-e presses a button, and every action is a
+;; command.  The browser's tab line shows the toolbar's buttons at its right
+;; end; a program drawing the browser otherwise, as LispM Desktop draws
+;; Netscape's window, draws them from `lispm-browser-extensions-buttons' and
+;; `lispm-browser-extensions-menu-items', presses them with
+;; `lispm-browser-extensions-press', says where they are through
+;; `lispm-browser-extensions-anchor-function', and redraws them on
+;; `lispm-browser-extensions-changed-hook'.
 ;;
 ;; The module is built with Swift (`lispm-browser-extensions-build') the
 ;; first time an extension is added, and again at a start that finds its
@@ -63,6 +79,8 @@
 (declare-function lispm-browser-webext-module-remove "lispm-browser-webext-module" (id))
 (declare-function lispm-browser-webext-module-set-enabled "lispm-browser-webext-module" (id enabled))
 (declare-function lispm-browser-webext-module-action "lispm-browser-webext-module" (id))
+(declare-function lispm-browser-webext-module-press "lispm-browser-webext-module" (id anchor))
+(declare-function lispm-browser-webext-module-set-pinned "lispm-browser-webext-module" (id pinned))
 (declare-function lispm-browser-webext-module-options-url "lispm-browser-webext-module" (id))
 (declare-function lispm-browser-webext-module-expect-page "lispm-browser-webext-module" (url))
 (declare-function lispm-browser-webext-module-activate "lispm-browser-webext-module" (address))
@@ -92,6 +110,15 @@ by its id, beside the list of them, installed.json."
   :type 'string
   :group 'lispm-browser-extensions)
 
+(defconst lispm-browser-extensions-page-url "lispm://extensions/"
+  "Address of the browser's page of extensions, which the module serves.")
+
+(defcustom lispm-browser-extensions-icon-size 16
+  "Size in pixels of an extension's icon on its button, as Chrome's 16.
+The module hands icons twice as large, sharp on a Retina screen."
+  :type 'natnum
+  :group 'lispm-browser-extensions)
+
 (defconst lispm-browser-extensions-source-directory
   (expand-file-name "native/lispm-browser-webext"
                     (file-name-directory
@@ -100,7 +127,9 @@ by its id, beside the list of them, installed.json."
   "Directory of the module's Swift package.")
 
 (defvar lispm-browser-extensions-changed-hook nil
-  "Hook run when the extensions, their buttons or their badges change.")
+  "Hook run when the extensions, their buttons or their badges change: an
+icon, a badge, a pin, a popup opening or closing.  What draws the buttons
+redraws them.")
 
 ;;;; Where they can run
 
@@ -264,9 +293,10 @@ when it changed."
 
 (defun lispm-browser-extensions-installed ()
   "Return the installed extensions, each a plist: :id, :name, :version,
-:enabled, :loaded, :fromStore, :source, and, while it runs, :label, :badge,
-:actionEnabled and :popup of its button for the page in front, :options
-and :errors."
+:description, :enabled, :loaded, :fromStore, :source, :pinned, :popupShown,
+and, while it runs, :label, :badge, :badgeColor, :badgeTextColor,
+:actionEnabled, :popup and :icon (PNG in base64) of its button for the page
+in front, :options and :errors."
   (when (eq lispm-browser-extensions--installed 'unread)
     (setq lispm-browser-extensions--installed
           (and lispm-browser-extensions--started
@@ -285,11 +315,14 @@ for the user, or opens and closes pages, runs after it returns."
       ("open" (run-at-time 0 nil #'lispm-browser-extensions--open payload))
       ("close" (run-at-time 0 nil #'lispm-browser-extensions--close payload))
       ("activate" (run-at-time 0 nil #'lispm-browser-extensions--activate payload))
+      ("command" (run-at-time 0 nil #'lispm-browser-extensions--command payload))
       ("search" (run-at-time 0 nil #'lispm-browser-extensions--search payload)))))
 
 (defun lispm-browser-extensions--changed ()
-  "Forget the list, and redraw what shows it."
+  "Forget the list, and redraw what shows it.  An extension popped out on
+the toolbar goes back once its popup is down."
   (setq lispm-browser-extensions--installed 'unread)
+  (lispm-browser-extensions--settle-popped-out)
   (when-let* ((buffer (get-buffer "*Browser Extensions*")))
     (with-current-buffer buffer (revert-buffer)))
   (run-hooks 'lispm-browser-extensions-changed-hook))
@@ -401,13 +434,13 @@ return its id.  In the list of extensions, it is the one at point."
 ;;;###autoload
 (defun lispm-browser-extensions-store ()
   "Open the Chrome Web Store in a new tab.  On an extension's page there,
-Add This Extension in the Extensions menu, or
-\\[lispm-browser-extensions-install-shown], adds it: the store's own button
+Add to LispM, where the store's own button stood, or
+\\[lispm-browser-extensions-install-shown], adds it: the store's button
 is Chrome's, and works in Chrome alone."
   (interactive)
   (lispm-browser-open-url lispm-browser-extensions-store-url t)
   (message "%s" (substitute-command-keys
-                 "On an extension's page, Extensions › Add This Extension adds it")))
+                 "On an extension's page, Add to LispM adds it")))
 
 (defun lispm-browser-extensions-install (text)
   "Add the Chrome extension TEXT names, its Chrome Web Store link or id.
@@ -441,18 +474,165 @@ changes."
   "Return non-nil when EXTENSION is on and runs."
   (plist-get extension :loaded))
 
+;;;; Its button
+
+(defun lispm-browser-extensions--find (id)
+  "Return the installed extension ID, or nil."
+  (seq-find (lambda (extension) (equal (plist-get extension :id) id))
+            (lispm-browser-extensions-installed)))
+
+(defvar lispm-browser-extensions--popped-out nil
+  "The unpinned extension whose button the toolbar shows while its popup
+is up, beside the Extensions button, as Chrome pops it out; or nil.")
+
+(defun lispm-browser-extensions--settle-popped-out ()
+  "Take the popped-out button off the toolbar once its popup is down."
+  (when-let* ((id lispm-browser-extensions--popped-out))
+    (unless (plist-get (lispm-browser-extensions--find id) :popupShown)
+      (setq lispm-browser-extensions--popped-out nil))))
+
+(defvar lispm-browser-extensions-anchor-function #'lispm-browser-extensions--tab-line-anchor
+  "Function telling where an extension's button is, for its popup to hang
+from when it is pressed from the keyboard or a menu.  It is called with
+the extension's id, or `menu' for the Extensions button, and returns an
+anchor, (FRAME X Y WIDTH HEIGHT): the button's rectangle in pixels from
+FRAME's top left, as `window-pixel-edges' counts them; or nil, for the
+popup to hang from the page's top right.  The browser's tab line is the
+default; a program drawing the buttons elsewhere sets its own.")
+
+(defun lispm-browser-extensions-event-anchor (event)
+  "Return the anchor of what mouse EVENT clicked: the rectangle, in its
+frame, of the image or string it was on, see
+`lispm-browser-extensions-anchor-function'.  Nil when it names no window."
+  (let* ((posn (event-start event))
+         (window (posn-window posn)))
+    (when (window-live-p window)
+      (pcase-let* ((`(,x . ,y) (posn-x-y posn))
+                   (`(,dx . ,dy) (or (posn-object-x-y posn) '(0 . 0)))
+                   (`(,width . ,height) (or (posn-object-width-height posn) '(0 . 0)))
+                   (`(,left . ,top) (lispm-browser-extensions--posn-origin posn)))
+        (list (window-frame window) (+ left (- x dx)) (+ top (- y dy)) width height)))))
+
+(defun lispm-browser-extensions--posn-origin (posn)
+  "Return where POSN's x and y count from, in pixels of its frame: the
+window's text area for a click in it, else the window's top left past a
+scroll bar on the left, as Emacs counts a click in a mode, header or tab
+line."
+  (let ((window (posn-window posn)))
+    (if (null (posn-area posn))
+        (pcase-let ((`(,left ,top . ,_) (window-inside-pixel-edges window)))
+          (cons left top))
+      (pcase-let ((`(,left ,top . ,_) (window-pixel-edges window)))
+        (cons (+ left (if (eq (window-current-scroll-bars window) 'left)
+                          (window-scroll-bar-width window)
+                        0))
+              top)))))
+
+(defun lispm-browser-extensions--frame-view (frame)
+  "Return the address of a page view FRAME shows, the browser's first."
+  (seq-some (lambda (window)
+              (and window (eq (window-frame window) frame)
+                   (lispm-browser--page-window-p window)
+                   (lispm-browser-extensions--address
+                    (with-current-buffer (window-buffer window) (xwidget-at (point-min))))))
+            (cons (lispm-browser-window) (window-list frame 'no-mini))))
+
+(defun lispm-browser-extensions--button-at (window x y)
+  "Return the `lispm-browser-extensions-button' of what WINDOW shows X and Y
+pixels from its top left: in a tab, header or mode line, an overlay's
+string or the buffer's text."
+  (let* ((posn (posn-at-x-y x y window t))
+         (string (posn-string posn))
+         (point (posn-point posn)))
+    (cond ((and (consp string) (stringp (car string)) (natnump (cdr string))
+                (< (cdr string) (length (car string))))
+           (get-text-property (cdr string) 'lispm-browser-extensions-button (car string)))
+          ((and (null (posn-area posn)) (integerp point))
+           (with-current-buffer (window-buffer window)
+             (and (<= (point-min) point) (< point (point-max))
+                  (get-char-property point 'lispm-browser-extensions-button)))))))
+
+(defun lispm-browser-extensions-button-anchor (window top height id)
+  "Return the anchor of the button of ID, or `menu' for the Extensions
+button, drawn on the row of WINDOW that starts TOP pixels from its top
+and is HEIGHT pixels high: the text with the property
+`lispm-browser-extensions-button' ID, found where Emacs drew it.  The
+row is read from its right end, where toolbars keep their buttons.  Nil
+when the button is not there."
+  (when (window-live-p window)
+    (let ((y (+ top (/ height 2)))
+          (x (1- (window-pixel-width window)))
+          right left)
+      (while (>= x 0)
+        (if (equal (lispm-browser-extensions--button-at window x y) id)
+            (setq right (or right x) left x x (1- x))
+          ;; Past the button's left end, it is found.
+          (setq x (if right -1 (1- x)))))
+      (when right
+        (pcase-let ((`(,window-left ,window-top . ,_) (window-pixel-edges window)))
+          (list (window-frame window) (+ window-left left) (+ window-top top)
+                (1+ (- right left)) height))))))
+
+(defun lispm-browser-extensions--anchor-json (anchor)
+  "Return ANCHOR as the module takes it, JSON naming a page view of its
+frame, or nil when the frame shows no page."
+  (pcase-let ((`(,frame ,x ,y ,width ,height) anchor))
+    (when-let* (((frame-live-p frame))
+                (view (lispm-browser-extensions--frame-view frame)))
+      (json-encode `((view . ,view) (x . ,x) (y . ,y) (width . ,width) (height . ,height))))))
+
 ;;;###autoload
-(defun lispm-browser-extensions-press (id)
-  "Press the button of extension ID for the page in front: its popup opens,
-or it is told it was clicked.  Asks which one, badges shown."
+(defun lispm-browser-extensions-press (id &optional anchor)
+  "Press the button of extension ID for the page in front: its popup opens
+under the button, or it is told it was clicked.  Pressing the button of
+the popup that is up closes it.  ANCHOR says where the button is, see
+`lispm-browser-extensions-anchor-function', which is asked when it is
+nil.  The button of an extension not pinned to the toolbar shows there
+while its popup is up.  Interactively, asks which one, badges shown."
   (interactive
    (progn (unless lispm-browser-extensions--started
             (user-error "No extension runs: add one with M-x lispm-browser-extensions-install"))
-          (lispm-browser-extensions--follow)
           (list (lispm-browser-extensions--read
                  "Press the button of: " #'lispm-browser-extensions--running-p))))
-  (unless (lispm-browser-webext-module-action id)
-    (user-error "That extension has no button")))
+  (lispm-browser-extensions--follow)
+  (let ((extension (lispm-browser-extensions--find id)))
+    (unless (or anchor (plist-get extension :pinned) (plist-get extension :popupShown))
+      (setq lispm-browser-extensions--popped-out id)
+      (run-hooks 'lispm-browser-extensions-changed-hook))
+    (let* ((anchor (or anchor (and lispm-browser-extensions-anchor-function
+                                   (funcall lispm-browser-extensions-anchor-function id))))
+           (json (and anchor (lispm-browser-extensions--anchor-json anchor)))
+           (pressed (if (fboundp 'lispm-browser-webext-module-press)
+                        (lispm-browser-webext-module-press id json)
+                      (lispm-browser-webext-module-action id))))
+      ;; One without a popup was only told it was clicked.
+      (setq lispm-browser-extensions--installed 'unread)
+      (lispm-browser-extensions--settle-popped-out)
+      (unless pressed
+        (user-error "That extension has no button")))))
+
+(defun lispm-browser-extensions-pin (id &optional unpin)
+  "Pin extension ID's button to the toolbar, or with UNPIN take it off:
+it is then in the Extensions menu alone.  Interactively, UNPIN is the
+prefix argument."
+  (interactive (list (lispm-browser-extensions--read
+                      (if current-prefix-arg "Unpin from the toolbar: " "Pin to the toolbar: ")
+                      (if current-prefix-arg
+                          (lambda (extension) (plist-get extension :pinned))
+                        (lambda (extension) (not (plist-get extension :pinned)))))
+                     current-prefix-arg))
+  (lispm-browser-webext-module-set-pinned id (not unpin)))
+
+(defun lispm-browser-extensions-unpin (id)
+  "Take extension ID's button off the toolbar, see `lispm-browser-extensions-pin'."
+  (interactive (list (lispm-browser-extensions--read
+                      "Unpin from the toolbar: " (lambda (extension) (plist-get extension :pinned)))))
+  (lispm-browser-extensions-pin id t))
+
+(defun lispm-browser-extensions-toggle-pin (id)
+  "Pin extension ID's button to the toolbar when it is not, else unpin it."
+  (interactive (list (lispm-browser-extensions--read "Pin or unpin: ")))
+  (lispm-browser-extensions-pin id (plist-get (lispm-browser-extensions--find id) :pinned)))
 
 (defun lispm-browser-extensions-options (id)
   "Open the options page of extension ID in a new tab."
@@ -493,6 +673,7 @@ or it is told it was clicked.  Asks which one, badges shown."
                           (cond ((plist-get extension :loaded) "on")
                                 ((plist-get extension :enabled) "failed")
                                 (t "off"))
+                          (if (plist-get extension :pinned) "yes" "")
                           (or (plist-get extension :badge) "")
                           (if (plist-get extension :fromStore) "Chrome Web Store"
                             (abbreviate-file-name (or (plist-get extension :source) ""))))))
@@ -504,11 +685,13 @@ or it is told it was clicked.  Asks which one, badges shown."
   "a" #'lispm-browser-extensions-press
   "o" #'lispm-browser-extensions-options
   "e" #'lispm-browser-extensions-toggle
+  "p" #'lispm-browser-extensions-toggle-pin
   "r" #'lispm-browser-extensions-reload
   "D" #'lispm-browser-extensions-remove
   "s" #'lispm-browser-extensions-store
   "i" #'lispm-browser-extensions-install
-  "l" #'lispm-browser-extensions-load-unpacked)
+  "l" #'lispm-browser-extensions-load-unpacked
+  "m" #'lispm-browser-extensions)
 
 (define-derived-mode lispm-browser-extensions-mode tabulated-list-mode "Extensions"
   "The browser's Chrome extensions.
@@ -520,10 +703,11 @@ or it is told it was clicked.  Asks which one, badges shown."
 \\[lispm-browser-extensions-press] presses its button,
 \\[lispm-browser-extensions-options] opens its options,
 \\[lispm-browser-extensions-toggle] turns it on or off,
+\\[lispm-browser-extensions-toggle-pin] pins it to the toolbar or unpins it,
 \\[lispm-browser-extensions-reload] reloads it and
-\\[lispm-browser-extensions-remove] removes it."
+\\[lispm-browser-extensions-remove] removes it.  \\[lispm-browser-extensions] opens their page."
   (setq tabulated-list-format [("Name" 28 t) ("Version" 12 nil) ("State" 7 t)
-                               ("Badge" 6 nil) ("From" 0 nil)]
+                               ("Pinned" 7 t) ("Badge" 6 nil) ("From" 0 nil)]
         tabulated-list-padding 1)
   (add-hook 'tabulated-list-revert-hook
             (lambda () (setq tabulated-list-entries (lispm-browser-extensions--entries)))
@@ -531,8 +715,9 @@ or it is told it was clicked.  Asks which one, badges shown."
   (tabulated-list-init-header))
 
 ;;;###autoload
-(defun lispm-browser-extensions ()
-  "List the browser's Chrome extensions, to add, press, set up and remove them."
+(defun lispm-browser-extensions-list ()
+  "List the browser's Chrome extensions in a buffer, to add, press, set up
+and remove them from the keyboard; `lispm-browser-extensions' is their page."
   (interactive)
   (lispm-browser-extensions--ensure
    (lambda ()
@@ -542,27 +727,322 @@ or it is told it was clicked.  Asks which one, badges shown."
        (tabulated-list-print)
        (pop-to-buffer (current-buffer))))))
 
-;;;; The browser's Extensions menu
+;;;; The page of them
 
-(defun lispm-browser-extensions--menu-items ()
-  "Return the items of the browser's Extensions menu: each running
-extension's button, then the Chrome Web Store, adding and managing them."
+(defun lispm-browser-extensions--page-p (buffer)
+  "Return non-nil when tab BUFFER shows the page of extensions."
+  (string-prefix-p "lispm://extensions" (or (ignore-errors (lispm-browser-uri buffer)) "")))
+
+;;;###autoload
+(defun lispm-browser-extensions (&optional id)
+  "Open the browser's page of extensions, lispm://extensions, as Chrome's
+chrome://extensions: a card for each, to turn it on and off, see what it
+may do, reload or remove it, and the ways to add one.  The tab showing it
+already is shown again.  ID opens that extension's details."
+  (interactive)
+  (lispm-browser-extensions--ensure
+   (lambda ()
+     (let ((url (if id (concat lispm-browser-extensions-page-url "?id=" (url-hexify-string id))
+                  lispm-browser-extensions-page-url))
+           (tab (seq-find #'lispm-browser-extensions--page-p (lispm-browser-tabs))))
+       (if (not tab)
+           (lispm-browser-open-url url t)
+         (unless (lispm-browser-window)
+           (lispm-browser-show))
+         (lispm-browser-select-tab tab)
+         (when id
+           (xwidget-webkit-goto-uri (with-current-buffer tab (xwidget-at (point-min))) url))
+         (funcall lispm-browser-raise-function))))))
+
+(defun lispm-browser-extensions--command (payload)
+  "Do what the page of extensions or the store's button asked in PAYLOAD,
+its :command and the :id of its extension, as the commands do.  The page
+asked before it removes one; the store's button asks here."
+  (let ((id (plist-get payload :id)))
+    (condition-case error
+        (pcase (plist-get payload :command)
+          ("enable" (lispm-browser-webext-module-set-enabled id t))
+          ("disable" (lispm-browser-webext-module-set-enabled id nil))
+          ("remove" (lispm-browser-webext-module-remove id))
+          ("ask-remove" (lispm-browser-extensions-remove id))
+          ("reload" (lispm-browser-extensions-reload id))
+          ("options" (lispm-browser-extensions-options id))
+          ("pin" (lispm-browser-extensions-pin id))
+          ("unpin" (lispm-browser-extensions-pin id t))
+          ("press" (lispm-browser-extensions-press id))
+          ("install" (lispm-browser-extensions-install id))
+          ("store" (lispm-browser-extensions-store))
+          ("store-page" (lispm-browser-open-url
+                         (concat (string-remove-suffix "/" lispm-browser-extensions-store-url)
+                                 "/detail/" id)
+                         t))
+          ("load-unpacked" (call-interactively #'lispm-browser-extensions-load-unpacked)))
+      (error (message "%s" (error-message-string error))))))
+
+;;;; The toolbar's buttons
+
+(defvar lispm-browser-extensions--images (make-hash-table :test #'equal)
+  "Icons made into images, by their PNG in base64.")
+
+(defun lispm-browser-extensions-icon (extension)
+  "Return EXTENSION's button icon for the page in front as an image, or nil.
+It is `lispm-browser-extensions-icon-size' pixels square; its `:data' is
+the PNG the module drew, twice as large."
+  (when-let* ((data (plist-get extension :icon))
+              ((stringp data)))
+    (or (gethash data lispm-browser-extensions--images)
+        (when-let* ((png (ignore-errors (base64-decode-string data)))
+                    (image (ignore-errors
+                             (create-image png 'png t
+                                           :width lispm-browser-extensions-icon-size
+                                           :height lispm-browser-extensions-icon-size
+                                           :ascent 'center))))
+          (when (> (hash-table-count lispm-browser-extensions--images) 128)
+            (clrhash lispm-browser-extensions--images))
+          (puthash data image lispm-browser-extensions--images)))))
+
+(defun lispm-browser-extensions--badge (extension)
+  "Return EXTENSION's badge text, or nil when it shows none."
+  (let ((badge (plist-get extension :badge)))
+    (and (stringp badge) (not (string-empty-p badge)) badge)))
+
+(defun lispm-browser-extensions--button (extension)
+  "Return EXTENSION's toolbar button, see `lispm-browser-extensions-buttons'."
+  (list :id (plist-get extension :id)
+        :name (or (plist-get extension :label) (plist-get extension :name))
+        :icon (lispm-browser-extensions-icon extension)
+        :badge (lispm-browser-extensions--badge extension)
+        :badge-color (or (plist-get extension :badgeColor) "#D93025")
+        :badge-text-color (or (plist-get extension :badgeTextColor) "#FFFFFF")
+        :enabled (and (plist-get extension :actionEnabled) t)
+        :popup (and (plist-get extension :popup) t)
+        :open (and (plist-get extension :popupShown) t)
+        :pinned (and (plist-get extension :pinned) t)))
+
+(defun lispm-browser-extensions-buttons ()
+  "Return the buttons the toolbar shows, in order: each running extension
+pinned to it, then the one popped out while its popup is up.  Each is a
+plist: :id, :name (its button's label), :icon (an image, see
+`lispm-browser-extensions-icon'), :badge (its text, or nil),
+:badge-color and :badge-text-color (\"#RRGGBB\"), :enabled (whether it
+does anything on the page in front), :popup (whether it has one), :open
+(whether its popup is up) and :pinned."
+  (when lispm-browser-extensions--started
+    (let ((running (seq-filter #'lispm-browser-extensions--running-p
+                               (lispm-browser-extensions-installed))))
+      (mapcar #'lispm-browser-extensions--button
+              (append (seq-filter (lambda (extension) (plist-get extension :pinned)) running)
+                      (seq-filter (lambda (extension)
+                                    (and (not (plist-get extension :pinned))
+                                         (or (plist-get extension :popupShown)
+                                             (equal (plist-get extension :id)
+                                                    lispm-browser-extensions--popped-out))))
+                                  running))))))
+
+;;;; The Extensions menu
+
+(defun lispm-browser-extensions-menu-items ()
+  "Return the items of the Extensions menu, which the toolbar's Extensions
+button and the menu bar show: each running extension, with its icon and
+badge, pressing its button; Pin to Toolbar, each one checked when its
+button is pinned; then the Chrome Web Store, adding and managing them.
+Each item is a plist, :label, :action, and :icon, :enabled, :checked and
+:submenu where they apply, or `separator'."
   (let ((running (and lispm-browser-extensions--started
                       (seq-filter #'lispm-browser-extensions--running-p
                                   (lispm-browser-extensions-installed)))))
     `(,@(mapcar (lambda (extension)
                   (let ((id (plist-get extension :id)))
                     (list :label (lispm-browser-extensions--label extension)
+                          :icon (lispm-browser-extensions-icon extension)
                           :action (lambda () (lispm-browser-extensions-press id))
                           :enabled (plist-get extension :actionEnabled))))
                 running)
-      ,@(when running '(separator))
+      ,@(when running
+          `(separator
+            (:label "Pin to Toolbar"
+                    :submenu ,(mapcar (lambda (extension)
+                                        (let ((id (plist-get extension :id))
+                                              (pinned (plist-get extension :pinned)))
+                                          (list :label (plist-get extension :name)
+                                                :icon (lispm-browser-extensions-icon extension)
+                                                :checked (and pinned t)
+                                                :action (lambda () (lispm-browser-extensions-pin id pinned)))))
+                                      running))
+            separator))
       (:label "Chrome Web Store" :action lispm-browser-extensions-store)
       (:label "Add This Extension" :action lispm-browser-extensions-install-shown
               :enabled ,(and (lispm-browser-extensions--shown-store-id) t))
       (:label "Load Unpacked…" :action lispm-browser-extensions-load-unpacked)
       separator
       (:label "Manage Extensions" :action lispm-browser-extensions))))
+
+(define-obsolete-function-alias 'lispm-browser-extensions--menu-items
+  #'lispm-browser-extensions-menu-items "0.2")
+
+(defun lispm-browser-extensions-button-menu-items (id)
+  "Return the items of the menu of extension ID's toolbar button, as Chrome
+shows when one is right-clicked: its name, pinning, its options, its
+details on the page of extensions, and removing it."
+  (when-let* ((extension (lispm-browser-extensions--find id)))
+    (let ((pinned (plist-get extension :pinned)))
+      `((:label ,(plist-get extension :name) :enabled nil)
+        separator
+        (:label ,(if pinned "Unpin from Toolbar" "Pin to Toolbar")
+                :action ,(lambda () (lispm-browser-extensions-pin id pinned)))
+        (:label "Options…" :action ,(lambda () (lispm-browser-extensions-options id))
+                :enabled ,(and (plist-get extension :options) t))
+        (:label "Manage Extension" :action ,(lambda () (lispm-browser-extensions id)))
+        separator
+        (:label "Remove…" :action ,(lambda () (lispm-browser-extensions-remove id)))))))
+
+(defun lispm-browser-extensions--menu-command (action)
+  "Return a command running menu ACTION, a command or a function."
+  (if (commandp action)
+      action
+    (lambda () (interactive) (funcall action))))
+
+(defun lispm-browser-extensions--keymap-menu (title items)
+  "Return ITEMS, as `lispm-browser-extensions-menu-items' has them, as a
+menu keymap named TITLE, for Emacs's own menus."
+  (let ((map (make-sparse-keymap title))
+        (count 0))
+    (dolist (item items)
+      (let ((key (vector (intern (format "item-%d" (cl-incf count))))))
+        (cond ((eq item 'separator)
+               (define-key-after map key menu-bar-separator))
+              ((plist-get item :submenu)
+               (let ((submenu (plist-get item :submenu)))
+                 (define-key-after map key
+                   (cons (plist-get item :label)
+                         (lispm-browser-extensions--keymap-menu
+                          (plist-get item :label) (if (functionp submenu) (funcall submenu) submenu))))))
+              (t
+               (define-key-after map key
+                 `(menu-item ,(plist-get item :label)
+                             ,(lispm-browser-extensions--menu-command (or (plist-get item :action) #'ignore))
+                             :enable ,(or (not (plist-member item :enabled)) (and (plist-get item :enabled) t))
+                             ,@(when (plist-member item :checked)
+                                 `(:button (:toggle . ,(and (plist-get item :checked) t))))))))))
+    map))
+
+(defun lispm-browser-extensions--pop-up (items where)
+  "Pop up ITEMS as one of Emacs's menus at WHERE: a mouse event, or an
+anchor, under which it opens."
+  (popup-menu (lispm-browser-extensions--keymap-menu "Extensions" items)
+              (if (eventp where)
+                  where
+                (pcase-let ((`(,frame ,x ,y ,_ ,height) where))
+                  (list (list x (+ y height)) frame)))))
+
+(defun lispm-browser-extensions-menu (&optional event)
+  "Pop up the Extensions menu under the Extensions button, or at mouse
+EVENT."
+  (interactive (list (and (mouse-event-p last-nonmenu-event) last-nonmenu-event)))
+  (lispm-browser-extensions--pop-up
+   (lispm-browser-extensions-menu-items)
+   (or event
+       (and lispm-browser-extensions-anchor-function
+            (funcall lispm-browser-extensions-anchor-function 'menu))
+       (list (selected-frame) 0 0 0 0))))
+
+;;;; Buttons in the tab line
+;;
+;; Out of the box the browser shows its toolbar's buttons at the right end
+;; of each page's tab line: a button per extension, its icon and badge,
+;; then the Extensions button.  Their place is known from their widths, so
+;; a popup pressed from the keyboard hangs under its button too.
+
+(defconst lispm-browser-extensions-tab-line-margin 4
+  "Pixels between the tab line's buttons and its right end.")
+
+(defvar lispm-browser-extensions--tab-line nil
+  "The tab line's buttons, drawn: (BUTTONS HEIGHT STRING WIDTH), drawn
+again when BUTTONS change.")
+
+(defun lispm-browser-extensions--tab-line-keymap (press menu)
+  "Return the keymap of a tab line button: PRESS runs on a click with the
+event, MENU, when non-nil, on a right click."
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "<tab-line> <down-mouse-1>" #'ignore)
+    (keymap-set map "<tab-line> <mouse-1>" (lambda (event) (interactive "e") (funcall press event)))
+    (when menu
+      (keymap-set map "<tab-line> <down-mouse-3>" #'ignore)
+      (keymap-set map "<tab-line> <mouse-3>" (lambda (event) (interactive "e") (funcall menu event))))
+    map))
+
+(defun lispm-browser-extensions--tab-line-button (button)
+  "Return BUTTON drawn for the tab line: its icon, or its name's initial,
+then its badge."
+  (let* ((id (plist-get button :id))
+         (icon (plist-get button :icon))
+         (face (if (plist-get button :open) 'tab-line-tab-current 'tab-line-tab-inactive))
+         (badge (plist-get button :badge)))
+    (let ((label (concat " "
+                         (if icon
+                             (propertize " " 'display (if (plist-get button :enabled) icon
+                                                        (append icon '(:conversion disabled))))
+                           (upcase (substring (or (plist-get button :name) "?") 0 1)))
+                         (if badge
+                             (propertize badge 'face `(:height 0.8 :weight bold
+                                                       :foreground ,(plist-get button :badge-text-color)
+                                                       :background ,(plist-get button :badge-color)))
+                           "")
+                         " ")))
+      ;; The badge keeps its colours over the tab's.
+      (add-face-text-property 0 (length label) face t label)
+      (propertize label
+                 'lispm-browser-extensions-button id
+                 'mouse-face 'tab-line-highlight 'pointer 'arrow
+                 'help-echo (plist-get button :name)
+                 'keymap (lispm-browser-extensions--tab-line-keymap
+                          (lambda (event)
+                            (lispm-browser-extensions-press id (lispm-browser-extensions-event-anchor event)))
+                          (lambda (event)
+                            (lispm-browser-extensions--pop-up
+                             (lispm-browser-extensions-button-menu-items id) event)))))))
+
+(defun lispm-browser-extensions--tab-line-puzzle ()
+  "Return the tab line's Extensions button, a puzzle piece."
+  (propertize " 🧩 " 'lispm-browser-extensions-button 'menu
+              'face 'tab-line-tab-inactive 'mouse-face 'tab-line-highlight 'pointer 'arrow
+              'help-echo "Extensions"
+              'keymap (lispm-browser-extensions--tab-line-keymap #'lispm-browser-extensions-menu nil)))
+
+(defun lispm-browser-extensions--tab-line-width (string)
+  "Return the width in pixels of STRING in the tab line, whose own face
+gives what the faces of STRING leave unsaid: its font, smaller."
+  (let ((copy (copy-sequence string)))
+    (add-face-text-property 0 (length copy) 'tab-line t copy)
+    (string-pixel-width copy)))
+
+(defun lispm-browser-extensions--tab-line-draw ()
+  "Return the tab line's buttons drawn, see `lispm-browser-extensions--tab-line'."
+  (let ((buttons (lispm-browser-extensions-buttons))
+        (height (frame-char-height)))
+    (unless (and lispm-browser-extensions--tab-line
+                 (equal (car lispm-browser-extensions--tab-line) buttons)
+                 (eql (nth 1 lispm-browser-extensions--tab-line) height))
+      (let ((string (concat (mapconcat #'lispm-browser-extensions--tab-line-button buttons "")
+                            (lispm-browser-extensions--tab-line-puzzle))))
+        (setq lispm-browser-extensions--tab-line
+              (list buttons height string (lispm-browser-extensions--tab-line-width string)))))
+    lispm-browser-extensions--tab-line))
+
+(defun lispm-browser-extensions-tab-line-buttons ()
+  "Return the toolbar's buttons for the end of a page's tab line, flush
+right: see `lispm-browser-tab-line-end-function'."
+  (pcase-let ((`(,_ ,_ ,string ,width) (lispm-browser-extensions--tab-line-draw)))
+    (concat (propertize " " 'display `(space :align-to (- right (,(+ width lispm-browser-extensions-tab-line-margin)))))
+            string
+            (propertize " " 'display `(space :width (,lispm-browser-extensions-tab-line-margin))))))
+
+(defun lispm-browser-extensions--tab-line-anchor (id)
+  "Return the anchor of the tab line's button ID, or `menu' for the
+Extensions button, in the browser's window."
+  (when-let* (((eq lispm-browser-tab-line-end-function #'lispm-browser-extensions-tab-line-buttons))
+              (window (lispm-browser-window)))
+    (lispm-browser-extensions-button-anchor window 0 (window-tab-line-height window) id)))
 
 ;;;; Setup
 
@@ -572,6 +1052,10 @@ The host starts at once when its module is built, so that every page runs
 them; the module is built in the background when extensions were added
 before and it is missing or its sources changed."
   (when (and lispm-browser-extensions-enabled (lispm-browser-extensions-supported-p))
+    ;; The toolbar's buttons end the tab line, unless the browser's chrome
+    ;; draws them itself.
+    (unless lispm-browser-tab-line-end-function
+      (setq lispm-browser-tab-line-end-function #'lispm-browser-extensions-tab-line-buttons))
     (add-hook 'window-selection-change-functions #'lispm-browser-extensions--follow)
     (add-hook 'window-buffer-change-functions #'lispm-browser-extensions--follow)
     (let ((added (file-exists-p (expand-file-name "installed.json" lispm-browser-extensions-directory))))

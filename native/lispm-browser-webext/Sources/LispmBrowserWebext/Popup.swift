@@ -2,8 +2,11 @@
 //
 // From Search (https://github.com/driceroland/Search) at
 // 6294b6aed35299c7ab91399a4b2374dd726b1f39, Sources/Search/ExtensionPopup.swift.
-// There it hangs from the extension's button; Emacs draws no such button,
-// so here it hangs from the top right of the page in front.
+// There it hangs from the extension's button, and so it does here: Emacs
+// draws the button and says where it is (Anchor); pressed from a menu or
+// with nothing drawn, it hangs from the top right of the page in front.
+// As in Chrome, it has no arrow, its right edge is under the button's, and
+// it stays inside the window, however wide it grows.
 //
 // WebKit offers a popover of its own for this, and it works for most
 // extensions — but not all: for some, messages from WebKit's popup never
@@ -37,6 +40,11 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
     private var page: PopupPage?
     private var measuring: Timer?
     private(set) var extensionID: String?
+    /// The button the popup that is up hangs from, if Emacs said.
+    private var button: Anchor?
+    /// What the popup that is up hangs under, in the coordinates of the
+    /// view it is shown from: kept so that it is placed again as it grows.
+    private var placed: (view: NSView, rect: NSRect)?
 
     /// The popup's web view, while one is up.
     var view: WKWebView? { web }
@@ -50,9 +58,64 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
         return ["id": "popup", "url": url.absoluteString, "visible": isUp, "focused": isUp && web?.window?.isKeyWindow == true]
     }
 
-    func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?) {
+    /// Where a popup hangs: under the extension's button, which Emacs draws.
+    /// `rect` is the button in the pixels of the Emacs frame showing the page
+    /// whose view is at `view`, from the frame's top left.
+    struct Anchor {
+        let view: Int
+        let rect: NSRect
+
+        init(view: Int, rect: NSRect) {
+            self.view = view
+            self.rect = rect
+        }
+
+        /// From Emacs: {"view", "x", "y", "width", "height"}, all numbers.
+        init?(json: String) {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+                  let view = (object["view"] as? NSNumber)?.intValue else { return nil }
+            let number = { (key: String) in (object[key] as? NSNumber)?.doubleValue }
+            guard let x = number("x"), let y = number("y"), let width = number("width"), let height = number("height"),
+                  width > 0, height > 0 else { return nil }
+            self.init(view: view, rect: NSRect(x: x, y: y, width: width, height: height))
+        }
+    }
+
+    /// The button's rectangle in the coordinates of the Emacs view the page
+    /// at its address is in, and that view; nil when the page is gone.
+    private func place(_ anchor: Anchor) -> (NSView, NSRect)? {
+        guard let page = Host.shared?.tabs.tab(address: anchor.view)?.view, page.window != nil else { return nil }
+        // The frame's own view, which Emacs draws the frame in: the page's
+        // view sits inside it, in a view of its own.
+        let frameView = NSClassFromString("EmacsView")
+        var view: NSView? = page.superview
+        while let found = view, let frameView, !found.isKind(of: frameView) { view = found.superview }
+        guard let host = view ?? page.window?.contentView else { return nil }
+        let r = anchor.rect
+        let rect = host.isFlipped ? r : NSRect(x: r.minX, y: host.bounds.height - r.maxY, width: r.width, height: r.height)
+        return (host, rect)
+    }
+
+    /// The anchor each extension's popup last hung from, for a popup the
+    /// extension opens itself (action.openPopup) or that comes back.
+    private var anchors: [String: Anchor] = [:]
+
+    /// The extension whose popup the last click outside it closed, and when.
+    private var closedByClick: (id: String, at: Date, anchor: Anchor?)?
+
+    /// Whether the mouse just went down on extension `id`'s button and so
+    /// closed its popup: the press that click makes once the mouse comes
+    /// up must not open it again.
+    func closedByItsButton(_ id: String) -> Bool {
+        guard let closed = closedByClick, closed.id == id, Date().timeIntervalSince(closed.at) < 2 else { return false }
+        closedByClick = nil
+        return true
+    }
+
+    func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?, at button: Anchor? = nil) {
         close()
         guard let host = Host.shared, let configuration = context.webViewConfiguration else { return }
+        let button = button ?? anchors[context.uniqueIdentifier]
         // Sized the way Chrome sizes a popup (see preferred), unseen, while
         // the popover already stands at the size this popup had last time;
         // then shown. It has to be in the window meanwhile: WebKit suspends
@@ -87,23 +150,39 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
         host.controller.didOpenTab(page)
 
         shown = false
-        if let anchor, anchor.window != nil {
+        if let button, let (view, rect) = place(button) {
+            // Under the button.
+            anchors[context.uniqueIdentifier] = button
+            self.button = button
+            placed = (view, rect)
+        } else if let anchor, anchor.window != nil {
             // The page's top right, a little in.
             let bounds = anchor.bounds
             let top = anchor.isFlipped ? bounds.minY + 4 : bounds.maxY - 5
-            let spot = NSRect(x: max(bounds.minX, bounds.maxX - 40), y: top, width: 1, height: 1)
-            popover.show(relativeTo: spot, of: anchor, preferredEdge: anchor.isFlipped ? .maxY : .minY)
+            placed = (anchor, NSRect(x: bounds.maxX - 8, y: top, width: 1, height: 1))
         } else if let content = (NSApp.keyWindow ?? NSApp.mainWindow)?.contentView {
             let bounds = content.bounds, flipped = content.isFlipped
-            let spot = NSRect(x: bounds.maxX - 60, y: flipped ? bounds.minY + 40 : bounds.maxY - 40, width: 1, height: 1)
-            popover.show(relativeTo: spot, of: content, preferredEdge: flipped ? .maxY : .minY)
-        } else {
+            placed = (content, NSRect(x: bounds.maxX - 8, y: flipped ? bounds.minY + 40 : bounds.maxY - 40,
+                                      width: 1, height: 1))
+        }
+        guard let (view, _) = placed else {
             close()
             return
         }
+        // As Chrome's: no arrow, its right edge under the button's, inside
+        // the window.  A popover centres itself on what it is shown from,
+        // and AppKit keeps it on the screen but not in the window, so it is
+        // shown from the point its middle should be under.
+        if popover.responds(to: NSSelectorFromString("setShouldHideAnchor:")) {
+            popover.setValue(true, forKey: "shouldHideAnchor")
+        }
+        popover.show(relativeTo: spot(width: popover.contentSize.width) ?? .zero, of: view,
+                     preferredEdge: view.isFlipped ? .maxY : .minY)
         // The keyboard goes to the popup, as a click would give it.
         web.window?.makeKeyAndOrderFront(nil)
         web.window?.makeFirstResponder(web)
+        // Its button shows pressed while the popup is up.
+        host.changed()
         // Measured when the document is built (see below) or has loaded;
         // a page slow to do either is measured anyway after a moment, and
         // shown regardless a little later.
@@ -149,6 +228,18 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
         }
     }
 
+    /// What the popover is shown from for a popup `width` wide, hanging
+    /// under `placed`: a sliver of its height at the middle of where the
+    /// popup goes, its right edge at the right edge of what it hangs under,
+    /// and wholly in the view, a few points from its edges.
+    private func spot(width: CGFloat) -> NSRect? {
+        guard let (view, rect) = placed else { return nil }
+        let bounds = view.bounds, margin: CGFloat = 4
+        var right = min(rect.maxX, bounds.maxX - margin)
+        if right - width < bounds.minX + margin { right = min(bounds.maxX - margin, bounds.minX + margin + width) }
+        return NSRect(x: (right - width / 2).rounded(), y: rect.minY, width: 1, height: rect.height)
+    }
+
     func close() {
         measuring?.invalidate()
         measuring = nil
@@ -157,13 +248,17 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
         closing?.performClose(nil)
     }
 
-    /// Tells WebKit the popup's tab is gone.
+    /// Tells WebKit the popup's tab is gone, and Emacs its button is up again.
     private func forget() {
+        let wasUp = popover != nil
         if let page { Host.shared?.controller.didCloseTab(page, windowIsClosing: false) }
         page = nil
         popover = nil
         web = nil
         extensionID = nil
+        button = nil
+        placed = nil
+        if wasUp { Host.shared?.changed() }
     }
 
     /// The size Chrome would give the popup (Blink's auto-size, between
@@ -237,6 +332,8 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
             popover.contentSize = size
             popover.contentViewController?.view.setFrameSize(size)
             if shown { web?.frame = NSRect(origin: .zero, size: size) }
+            // Wider, it is placed again, so as to stay in the window.
+            if let spot = spot(width: size.width) { popover.positioningRect = spot }
         }
         if let id = extensionID { Popup.lastSize[id] = size }
         reveal()
@@ -311,6 +408,17 @@ final class Popup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopoverDelega
         }
         close()
         return nil
+    }
+
+    /// A popover goes as the mouse goes down outside it.  When that was on
+    /// the popup's own button, the press the click makes is no press: see
+    /// closedByItsButton.
+    func popoverWillClose(_ notification: Notification) {
+        guard (notification.object as? NSPopover) === popover, let id = extensionID else { return }
+        guard let event = NSApp.currentEvent, event.type == .leftMouseDown || event.type == .rightMouseDown,
+              let button, let (view, rect) = place(button), event.window === view.window else { return }
+        let point = view.convert(event.locationInWindow, from: nil)
+        if rect.insetBy(dx: -2, dy: -2).contains(point) { closedByClick = (id, Date(), button) }
     }
 
     /// Only for the popover that is up: closing the last one animates, and

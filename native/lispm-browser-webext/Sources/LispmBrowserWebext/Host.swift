@@ -120,6 +120,8 @@ final class Host: NSObject {
         }
         configuration.webExtensionController = controller
         configuration.applicationNameForUserAgent = Rules.userAgentName
+        // The browser's own pages, lispm://, and the store's button.
+        BrowserPages.shared.prepare(configuration)
         return configuration
     }
 
@@ -130,6 +132,7 @@ final class Host: NSObject {
     func adopt(_ view: WKWebView) {
         view.customUserAgent = nil
         ExtensionWorkerRecovery.shared.attach(view.configuration.userContentController)
+        BrowserPages.shared.adopt(view)
         tabs.adopt(view)
     }
 
@@ -160,33 +163,88 @@ final class Host: NSObject {
                 guard let self else { return }
                 self.changePending = false
                 self.events.send("changed")
+                BrowserPages.shared.changed()
             }
         }
     }
 
     func listJSON() -> String {
-        let list: [[String: Any]] = installed.map { item in
+        let data = try? JSONSerialization.data(withJSONObject: list())
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    /// The installed extensions, as `lispm-browser-extensions-installed'
+    /// reads them: what each is, whether it runs, and its button for the
+    /// page in front, its icon a PNG in base64, 32 pixels square, for a
+    /// 16-point button on a Retina screen.  `details` adds what the
+    /// management page shows of one: what it may do and where it came from.
+    func list(details: Bool = false) -> [[String: Any]] {
+        installed.map { item in
             var entry: [String: Any] = [
                 "id": item.id, "name": item.name, "version": item.version, "enabled": item.enabled,
                 "fromStore": item.fromStore, "loaded": contexts[item.id] != nil,
+                "pinned": isPinned(item.id),
+                "popupShown": Popup.shared.isUp && Popup.shared.extensionID == item.id,
             ]
             if let source = item.source { entry["source"] = source }
             var problems = errors[item.id] ?? []
+            let found = contexts[item.id]?.webExtension ?? manifests[item.id]
+            if let text = found?.displayDescription { entry["description"] = text }
             if let context = contexts[item.id] {
                 if let action = context.action(for: tabs.active) {
                     entry["label"] = action.label
                     entry["badge"] = action.badgeText
                     entry["actionEnabled"] = action.isEnabled
                     entry["popup"] = action.presentsPopup
+                    entry["icon"] = Icons.base64(action.icon(for: NSSize(width: 16, height: 16)),
+                                                 key: "action \(item.id)", pixels: 32)
+                    let address = tabs.active?.address
+                    entry["badgeColor"] = ExtensionShims.badgeColor("background", of: item.id, at: address)
+                        ?? Badge.defaultBackground
+                    entry["badgeTextColor"] = ExtensionShims.badgeColor("text", of: item.id, at: address)
+                        ?? Badge.defaultText
                 }
                 entry["options"] = context.optionsPageURL != nil
                 problems = context.errors.map(\.localizedDescription) + problems
             }
+            if details, let found {
+                entry["wants"] = Rules.describe(found, in: folder(for: item.id))
+            }
             entry["errors"] = problems
             return entry
         }
-        let data = try? JSONSerialization.data(withJSONObject: list)
-        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    // MARK: - the toolbar
+
+    /// The extensions pinned to the toolbar, in the order pinned.  An install
+    /// from before there was a toolbar never pinned any, and finds them all
+    /// pinned: each button was one press away then too.
+    private var pinned: [String] {
+        stored["pinned"] as? [String] ?? installed.map(\.id)
+    }
+
+    func isPinned(_ id: String) -> Bool { pinned.contains(id) }
+
+    func setPinned(_ id: String, _ on: Bool) {
+        var list = pinned.filter { kept in kept != id && installed.contains { $0.id == kept } }
+        if on, installed.contains(where: { $0.id == id }) { list.append(id) }
+        guard list != pinned || stored["pinned"] == nil else { return }
+        keep(list, at: "pinned")
+        changed()
+    }
+
+    /// Each extension's manifest as WebKit read it, for those not running:
+    /// their description and icon, on the management page.
+    private var manifests: [String: WKWebExtension] = [:]
+
+    /// Extension `id` as WebKit reads it, running or not.
+    func manifest(_ id: String) async -> WKWebExtension? {
+        if let found = contexts[id]?.webExtension ?? manifests[id] { return found }
+        guard installed.contains(where: { $0.id == id }),
+              let found = try? await WKWebExtension(resourceBaseURL: folder(for: id)) else { return nil }
+        manifests[id] = found
+        return found
     }
 
     // MARK: - asking Emacs
@@ -275,8 +333,16 @@ final class Host: NSObject {
     /// opened here, straight away: left to WebKit, it builds a popup of its
     /// own first, and closing that one in favour of this one lost the new
     /// popup's first messages to its worker.
-    func performAction(_ id: String) -> Bool {
+    func performAction(_ id: String, anchor: Popup.Anchor? = nil) -> Bool {
         guard let context = contexts[id] else { return false }
+        // Pressed while its popup is up, or by the click that just closed
+        // it — a popover goes at the mouse going down outside it — the
+        // button closes its popup, as Chrome's does.
+        if Popup.shared.extensionID == id, Popup.shared.isUp {
+            Popup.shared.close()
+            return true
+        }
+        if Popup.shared.closedByItsButton(id) { return true }
         let tab = tabs.active
         Host.clicked[id] = Date()
         Host.pressed[id] = Date()
@@ -292,7 +358,7 @@ final class Host: NSObject {
         }
         guard let action = context.action(for: tab) else { return false }
         if action.presentsPopup, let url = popupURL(for: context) {
-            Popup.shared.show(url, for: context, from: tab?.view)
+            Popup.shared.show(url, for: context, from: tab?.view, at: anchor)
             return true
         }
         context.performAction(for: tab)
@@ -579,6 +645,7 @@ final class Host: NSObject {
         let permissions = Rules.grants(found, in: staged)
         try ExtensionFiles.replace(staged, at: folder(for: id))
         unload(id)
+        manifests[id] = nil
         errors[id] = nil
         workersChanged()
         let item = Installed(id: id, name: name, version: version, enabled: true, fromStore: fromStore,
@@ -586,6 +653,8 @@ final class Host: NSObject {
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
+        // Pinned to the toolbar, so that its button shows at once.
+        setPinned(id, true)
         events.message(await load(item) ? "\(name) is installed" : "\(name) is installed, but WebKit couldn't start it")
     }
 
@@ -645,6 +714,7 @@ final class Host: NSObject {
                 }
             }
             unload(id)
+            manifests[id] = nil
             errors[id] = nil
             workersChanged()
             if let index = installed.firstIndex(where: { $0.id == id }) {
@@ -673,11 +743,13 @@ final class Host: NSObject {
     func remove(_ id: String) {
         guard installed.contains(where: { $0.id == id }) else { return }
         unload(id)
+        manifests[id] = nil
         errors[id] = nil
         setGranted([], for: id)
         setSettings([:], for: id)
         loadsThisRun.remove(id)
         loadedBefore.remove(id)
+        setPinned(id, false)
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: folder(for: id))
