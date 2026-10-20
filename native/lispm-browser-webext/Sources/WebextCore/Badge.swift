@@ -1,7 +1,7 @@
 // The colours of an extension's badge, as the browser draws it.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // chrome.action.setBadgeBackgroundColor and setBadgeTextColor take a
 // colour as four numbers, [r, g, b, a], or as a CSS colour string.  WebKit

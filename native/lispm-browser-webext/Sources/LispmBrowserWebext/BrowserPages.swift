@@ -2,7 +2,7 @@
 // is given.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // lispm://extensions is the browser's page of extensions, as Chrome's
 // chrome://extensions: a card for each, to turn it on and off, see what it

@@ -1,7 +1,7 @@
 // lispm://extensions, the browser's page of extensions.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Laid out as Chrome's chrome://extensions: a bar with the page's name and
 // the ways to add one, then a card for each extension, its icon, name,
