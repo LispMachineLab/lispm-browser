@@ -158,5 +158,5 @@ the development snapshot.  =make webext-test= runs the extension module's own te
 
 * License
 
-GPL-3.0-or-later.  See [[file:LICENSE][LICENSE]].  The extension module's code ported from
+AGPL-3.0-or-later.  See [[file:LICENSE][LICENSE]].  The extension module's code ported from
 Search keeps Search's MIT license, in =native/lispm-browser-webext/LICENSE.Search=.

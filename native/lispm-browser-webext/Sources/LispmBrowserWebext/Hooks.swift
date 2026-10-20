@@ -1,7 +1,7 @@
 // lispm-browser-webext: the two places it reaches into Emacs's page views.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Emacs on macOS makes each page as an XwWebView, its WKWebView subclass
 // in src/nsxwidget.m, from a configuration it has just made.  WebKit reads
