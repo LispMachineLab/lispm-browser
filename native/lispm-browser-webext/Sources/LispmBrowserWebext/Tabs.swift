@@ -125,8 +125,10 @@ final class ExtensionTab: NSObject, WKWebExtensionTab, ShimTab {
     /// A tab showing another extension's page gives an extension nothing of
     /// it: no view to run a script in, no address, no picture — whatever it
     /// was granted (see Rules.reachesExtensions).
+    /// The browser's own pages, lispm://, are sealed to every extension, as
+    /// Chrome's chrome:// pages are.
     private func sealed(_ context: WKWebExtensionContext) -> Bool {
-        Rules.othersPage(view?.url, for: context)
+        Rules.othersPage(view?.url, for: context) || BrowserPages.isOwn(view?.url)
     }
 
     func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? { tabs.window }

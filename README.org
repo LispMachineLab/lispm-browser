@@ -42,17 +42,27 @@ applications, drawn as Netscape Communicator's window was on Mac OS 9.
   leaves.  Emacs on macOS cannot hand keys to a page, so they reach it through JavaScript.
 - *Chrome extensions*, on macOS 15.4 and later: WebKit runs them itself, as Safari runs its own
   (WKWebExtension), in every page whose view carries its extension controller, and a dynamic
-  module in Swift hands Emacs's page views that controller as they are made.  =M-x
-  lispm-browser-extensions-store= opens the Chrome Web Store in a tab; on an extension's page
-  there, =M-x lispm-browser-extensions-install-shown= adds it (the store's own button is Chrome's
-  and works in Chrome alone), its signature checked and what it will be able to do asked first.
-  =M-x lispm-browser-extensions-install= adds one by its store link or id, and =M-x
-  lispm-browser-extensions-load-unpacked= one from a folder, as Chrome's developer mode does.
-  =M-e= presses a running extension's button for the page in front: its popup hangs from the
-  page's top right, or it is told it was clicked.  =M-x lispm-browser-extensions= lists them, to
-  press, open the options of (in a tab of their own), turn on and off, reload or remove.  Their
-  tabs are the browser's pages, their questions are asked in the minibuffer, and they live in
-  =lispm-browser-extensions-directory=.  Most of the module is ported from
+  module in Swift hands Emacs's page views that controller as they are made.  They are used as
+  in Chrome.  The toolbar, at the right end of the tab line, has a button per extension pinned
+  to it, its icon and badge: a click opens its popup under the button, and another closes it,
+  or the extension is told it was clicked; a right click shows its menu (unpin, options,
+  manage, remove).  The Extensions button after them, a puzzle piece, opens the menu of them
+  all: each running extension, Pin to Toolbar, the Chrome Web Store, Load Unpacked (as Chrome's
+  developer mode does) and Manage Extensions.  An extension not pinned shows on the toolbar
+  while its popup is up.  The page of extensions, =lispm://extensions= (=M-x
+  lispm-browser-extensions=), as Chrome's =chrome://extensions=, has a card for each, to turn it
+  on and off, see what it may do, reload or remove it, with Load unpacked and Open Chrome Web
+  Store at its top.  On an extension's page in the Chrome Web Store, Add to LispM stands where
+  the store's Add to Chrome did (that one is Chrome's and works in Chrome alone): it is fetched,
+  its signature checked and what it will be able to do asked first, and it comes pinned.  From
+  the keyboard, =M-e= presses a button, its popup hanging under it, the page's buttons take
+  the hints (=f=), and each action is a command: =M-x lispm-browser-extensions-install= adds one
+  by its store link or id (=-install-shown= the one whose store page is shown),
+  =-load-unpacked= one from a folder, =-pin= and =-unpin= put its button on the toolbar and
+  take it off, =-menu= pops up the Extensions menu, and =-list= lists them in a buffer, to
+  press, open the options of (in a tab of their own), turn on and off, pin, reload or remove.
+  Their tabs are the browser's pages, their questions are asked in the minibuffer, and they live
+  in =lispm-browser-extensions-directory=.  Most of the module is ported from
   [[https://github.com/driceroland/Search][Search]], a WebKit browser for macOS, with the script
   Search puts in every extension to fill in the Chrome APIs WebKit lacks (notifications,
   offscreen documents, a worker's WebSockets, user scripts, the side panel as a tab…) and to
@@ -124,11 +134,20 @@ it shows:
 | ~lispm-browser-before-quit-hook~    | the browser quits, its tabs still open            |
 | ~lispm-browser-quit-hook~           | the browser quit, its tabs closed                 |
 | ~lispm-browser-places-changed-hook~ | the history or the bookmarks changed              |
+| ~lispm-browser-tab-line-end-function~ | what the tab line ends with: the extensions' buttons |
+| ~lispm-browser-extensions-anchor-function~ | where an extension's button is, for its popup |
+| ~lispm-browser-extensions-changed-hook~ | an extension's button, badge or pin changed |
 
 What it draws with: ~lispm-browser-tabs~, ~lispm-browser-shown-buffer~, ~lispm-browser-uri~,
 ~lispm-browser-title~, ~lispm-browser-favicon~, ~lispm-browser-navigation-state~,
-~lispm-browser-history~, ~lispm-browser-bookmarks~ and, for the menus of the extensions,
-~lispm-browser-extensions--menu-items~.
+~lispm-browser-history~, ~lispm-browser-bookmarks~ and, for the extensions,
+~lispm-browser-extensions-buttons~ (the toolbar's buttons: icon, badge and its colours, whether
+the popup is up), ~lispm-browser-extensions-menu-items~ (the Extensions menu) and
+~lispm-browser-extensions-button-menu-items~ (a button's own).  A button drawn with the text
+property ~lispm-browser-extensions-button~ (its extension's id, or ~menu~ for the Extensions
+button) is found where Emacs drew it by ~lispm-browser-extensions-button-anchor~, and a click on
+it gives ~lispm-browser-extensions-event-anchor~; ~lispm-browser-extensions-press~ takes either,
+for the popup to hang under the button.
 
 * Tests
 

@@ -2128,10 +2128,38 @@ enum ExtensionShims {
           return setPopup(details, callback);
         });
       }
+      // A badge colour as the browser keeps it, for the page the details
+      // name or for all of them.
+      const badgeColor = (key) => (details = {}, callback) => {
+        const index = typeof details.tabId === "number" && chrome.tabs
+          ? chrome.tabs.get(details.tabId).then((t) => t.index, () => -1) : Promise.resolve(-1);
+        const promise = index.then((i) => native("action.badgeColor.get", [key, i]));
+        if (!callback) return promise;
+        promise.then((value) => callback(value), (error) => withLastError(error, callback));
+      };
       fill("action", {
-        getUserSettings: resolve({ isOnToolbar: true }), onUserSettingsChanged: event(),
-        setBadgeTextColor: resolve(undefined), getBadgeTextColor: resolve([255, 255, 255, 255]),
+        // Whether its button is pinned to the toolbar.
+        getUserSettings: call("action.userSettings"), onUserSettingsChanged: event(),
+        getBadgeTextColor: badgeColor("text"), getBadgeBackgroundColor: badgeColor("background"),
       });
+      // The badge's colours, which WebKit keeps to itself, told to the
+      // browser too: it draws the badge on the extension's button.
+      for (const name of ["action", "browserAction"]) {
+        const a = chrome[name];
+        if (!a) continue;
+        for (const [method, key] of [["setBadgeBackgroundColor", "background"], ["setBadgeTextColor", "text"]]) {
+          const own = typeof a[method] === "function" ? a[method].bind(a) : null;
+          put(a, method, (details = {}, callback) => {
+            const color = details.color ?? null;
+            const tell = (index) => native("action.badgeColor", [key, color, index]).catch(() => {});
+            if (typeof details.tabId === "number" && chrome.tabs) chrome.tabs.get(details.tabId).then((t) => tell(t.index), () => {});
+            else tell(-1);
+            if (own) { try { return own(details, callback); } catch (e) {} }
+            if (callback) { setTimeout(() => callback()); return; }
+            return Promise.resolve();
+          });
+        }
+      }
       fill("webNavigation", {
         onCreatedNavigationTarget: event(), onHistoryStateUpdated: event(), onReferenceFragmentUpdated: event(), onTabReplaced: event(),
         TransitionType: enumOf("link", "typed", "auto_bookmark", "auto_subframe", "manual_subframe", "generated",
@@ -3472,6 +3500,16 @@ enum ExtensionShims {
     /// Popups extensions set for their buttons: per page, by its view's
     /// address, or "*" for all.
     static var popups: [String: [String: String]] = [:]
+    /// The badge colours extensions set for their buttons, "#rrggbb", by
+    /// extension, then "background" or "text", then page as `popups` has it.
+    static var badgeColors: [String: [String: [String: String]]] = [:]
+
+    /// Extension `id`'s badge colour `key` for the page whose view is at
+    /// `address`, or for every page; nil when it set none.
+    static func badgeColor(_ key: String, of id: String, at address: Int?) -> String? {
+        let set = badgeColors[id]?[key] ?? [:]
+        return address.flatMap { set[String($0)] } ?? set["*"]
+    }
     /// Keep-awake assertions, one per extension that asked.
     static var awake: [String: IOPMAssertionID] = [:]
 
@@ -3824,6 +3862,29 @@ enum ExtensionShims {
                 popups[id] = popups[id]?.filter { $0.key == "*" }
             }
             return nil
+
+        case "action.badgeColor":
+            // ["background" or "text", a colour or null, the page's place or -1]
+            guard let key = first as? String, key == "background" || key == "text" else { return nil }
+            let color = args.dropFirst().first.flatMap(Badge.hex)
+            let index = args.dropFirst(2).first as? Int ?? -1
+            let page = index >= 0 && owner.tabs.order.indices.contains(index) ? String(owner.tabs.order[index].address) : "*"
+            var set = badgeColors[id, default: [:]][key, default: [:]]
+            if page == "*" { set = [:] }
+            set[page] = color
+            badgeColors[id, default: [:]][key] = set
+            owner.changed()
+            return nil
+
+        case "action.badgeColor.get":
+            guard let key = first as? String else { return nil }
+            let index = args.dropFirst().first as? Int ?? -1
+            let address = index >= 0 && owner.tabs.order.indices.contains(index) ? owner.tabs.order[index].address : nil
+            let hex = badgeColor(key, of: id, at: address) ?? (key == "text" ? Badge.defaultText : Badge.defaultBackground)
+            return Badge.rgba(hex)
+
+        case "action.userSettings":
+            return ["isOnToolbar": owner.isPinned(id)]
 
         // MARK: script injection and user scripts
         case "scripting.file":

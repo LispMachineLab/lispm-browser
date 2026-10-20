@@ -554,9 +554,15 @@ was not looked up yet has its lookup started."
             (truncate-string-to-width (lispm-browser-title buffer)
                                       lispm-browser-tab-width nil nil "…"))))
 
+(defvar lispm-browser-tab-line-end-function nil
+  "Function returning what the tab line shows at its right end, or nil:
+the toolbar's buttons of the extensions, once they run (see
+`lispm-browser-extensions-tab-line-buttons').")
+
 (defun lispm-browser-tab-line ()
   "Return the tab line of the page being drawn: a tab per page, its own in
-front, then + for a new one."
+front, then + for a new one, and what `lispm-browser-tab-line-end-function'
+puts at the right end."
   (let ((shown (current-buffer)))
     (concat
      (mapconcat (lambda (buffer)
@@ -569,7 +575,9 @@ front, then + for a new one."
                 (lispm-browser-tabs) "")
      (propertize " + " 'face 'tab-line-tab-inactive 'mouse-face 'tab-line-highlight 'pointer 'arrow
                  'keymap (lispm-browser-tab-keymap #'lispm-browser-new-tab)
-                 'help-echo "New tab"))))
+                 'help-echo "New tab")
+     (and lispm-browser-tab-line-end-function
+          (funcall lispm-browser-tab-line-end-function)))))
 
 ;;;; Keys
 
