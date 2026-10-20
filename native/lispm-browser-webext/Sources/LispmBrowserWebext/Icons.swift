@@ -1,7 +1,7 @@
 // Extensions' icons, as PNG for Emacs and for the management page.
 //
 // Copyright (C) 2026  Ryan.K
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // WebKit hands an extension's icon as an NSImage, the best of the sizes
 // its manifest lists.  Emacs draws PNG, so the image is drawn into a
