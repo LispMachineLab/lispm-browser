@@ -87,6 +87,11 @@ by its id, beside the list of them, installed.json."
   :type 'directory
   :group 'lispm-browser-extensions)
 
+(defcustom lispm-browser-extensions-store-url "https://chromewebstore.google.com/"
+  "Address of the Chrome Web Store, which `lispm-browser-extensions-store' opens."
+  :type 'string
+  :group 'lispm-browser-extensions)
+
 (defconst lispm-browser-extensions-source-directory
   (expand-file-name "native/lispm-browser-webext"
                     (file-name-directory
@@ -394,6 +399,16 @@ return its id.  In the list of extensions, it is the one at point."
     (cdr (assoc (completing-read prompt choices nil t) choices))))
 
 ;;;###autoload
+(defun lispm-browser-extensions-store ()
+  "Open the Chrome Web Store in a new tab.  On an extension's page there,
+Add This Extension in the Extensions menu, or
+\\[lispm-browser-extensions-install-shown], adds it: the store's own button
+is Chrome's, and works in Chrome alone."
+  (interactive)
+  (lispm-browser-open-url lispm-browser-extensions-store-url t)
+  (message "%s" (substitute-command-keys
+                 "On an extension's page, Extensions › Add This Extension adds it")))
+
 (defun lispm-browser-extensions-install (text)
   "Add the Chrome extension TEXT names, its Chrome Web Store link or id.
 It is fetched from the store and its signature checked, then you are asked,
@@ -491,13 +506,16 @@ or it is told it was clicked.  Asks which one, badges shown."
   "e" #'lispm-browser-extensions-toggle
   "r" #'lispm-browser-extensions-reload
   "D" #'lispm-browser-extensions-remove
+  "s" #'lispm-browser-extensions-store
   "i" #'lispm-browser-extensions-install
   "l" #'lispm-browser-extensions-load-unpacked)
 
 (define-derived-mode lispm-browser-extensions-mode tabulated-list-mode "Extensions"
   "The browser's Chrome extensions.
 \\<lispm-browser-extensions-mode-map>
-\\[lispm-browser-extensions-install] adds one from the Chrome Web Store,
+\\[lispm-browser-extensions-store] opens the Chrome Web Store, where
+\\[lispm-browser-extensions-install-shown] adds the extension whose page is shown;
+\\[lispm-browser-extensions-install] adds one by its store link or id,
 \\[lispm-browser-extensions-load-unpacked] one from a folder.  On a line,
 \\[lispm-browser-extensions-press] presses its button,
 \\[lispm-browser-extensions-options] opens its options,
@@ -528,7 +546,7 @@ or it is told it was clicked.  Asks which one, badges shown."
 
 (defun lispm-browser-extensions--menu-items ()
   "Return the items of the browser's Extensions menu: each running
-extension's button, then adding and managing them."
+extension's button, then the Chrome Web Store, adding and managing them."
   (let ((running (and lispm-browser-extensions--started
                       (seq-filter #'lispm-browser-extensions--running-p
                                   (lispm-browser-extensions-installed)))))
@@ -539,9 +557,9 @@ extension's button, then adding and managing them."
                           :enabled (plist-get extension :actionEnabled))))
                 running)
       ,@(when running '(separator))
+      (:label "Chrome Web Store" :action lispm-browser-extensions-store)
       (:label "Add This Extension" :action lispm-browser-extensions-install-shown
               :enabled ,(and (lispm-browser-extensions--shown-store-id) t))
-      (:label "Add from Chrome Web Store…" :action lispm-browser-extensions-install)
       (:label "Load Unpacked…" :action lispm-browser-extensions-load-unpacked)
       separator
       (:label "Manage Extensions" :action lispm-browser-extensions))))
