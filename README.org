@@ -43,8 +43,10 @@ applications, drawn as Netscape Communicator's window was on Mac OS 9.
 - *Chrome extensions*, on macOS 15.4 and later: WebKit runs them itself, as Safari runs its own
   (WKWebExtension), in every page whose view carries its extension controller, and a dynamic
   module in Swift hands Emacs's page views that controller as they are made.  =M-x
-  lispm-browser-extensions-install= adds one from the Chrome Web Store (the store page shown, a
-  link or an id), its signature checked and what it will be able to do asked first, and =M-x
+  lispm-browser-extensions-store= opens the Chrome Web Store in a tab; on an extension's page
+  there, =M-x lispm-browser-extensions-install-shown= adds it (the store's own button is Chrome's
+  and works in Chrome alone), its signature checked and what it will be able to do asked first.
+  =M-x lispm-browser-extensions-install= adds one by its store link or id, and =M-x
   lispm-browser-extensions-load-unpacked= one from a folder, as Chrome's developer mode does.
   =M-e= presses a running extension's button for the page in front: its popup hangs from the
   page's top right, or it is told it was clicked.  =M-x lispm-browser-extensions= lists them, to

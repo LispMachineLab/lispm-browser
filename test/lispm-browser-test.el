@@ -478,7 +478,8 @@ page when it is one, and the module is answered with its view."
 
 (ert-deftest lispm-browser-test-extensions-menu ()
   "The Extensions menu has each running extension's button, its badge in
-the label, then adding them, from the page shown when it is a store page."
+the label, then the Chrome Web Store, and adding the extension of the page
+shown when it is a store page."
   (let ((lispm-browser-extensions--started t)
         (lispm-browser-extensions--installed
          '((:id "a" :name "Blocker" :loaded t :badge "12" :actionEnabled t)
@@ -487,17 +488,30 @@ the label, then adding them, from the page shown when it is a store page."
       (let ((items (lispm-browser-extensions--menu-items)))
         (should (equal (plist-get (car items) :label) "Blocker [12]"))
         (should (eq (nth 1 items) 'separator))
-        (should (equal (plist-get (nth 2 items) :label) "Add This Extension"))
-        (should-not (plist-get (nth 2 items) :enabled))
+        (should (equal (plist-get (nth 2 items) :label) "Chrome Web Store"))
+        (should (eq (plist-get (nth 2 items) :action) 'lispm-browser-extensions-store))
+        (should (equal (plist-get (nth 3 items) :label) "Add This Extension"))
+        (should-not (plist-get (nth 3 items) :enabled))
         (should-not (seq-find (lambda (item) (equal (plist-get item :label) "Off"))
                               (seq-filter #'consp items)))))
     (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id)
                (lambda () "ddkjiahejlhfcafbddmgiahcphecmpfh")))
-      (should (plist-get (nth 2 (lispm-browser-extensions--menu-items)) :enabled))))
+      (should (plist-get (nth 3 (lispm-browser-extensions--menu-items)) :enabled))))
   (let ((lispm-browser-extensions--started nil))
     (cl-letf (((symbol-function 'lispm-browser-extensions--shown-store-id) #'ignore))
       (should (equal (plist-get (car (lispm-browser-extensions--menu-items)) :label)
-                     "Add This Extension")))))
+                     "Chrome Web Store")))))
+
+(ert-deftest lispm-browser-test-extensions-store-opens-a-tab ()
+  "The Chrome Web Store opens in a new tab, asking nothing."
+  (let ((opened nil)
+        (lispm-browser-extensions-store-url "https://store.example/"))
+    (cl-letf (((symbol-function 'lispm-browser-open-url)
+               (lambda (url &optional new-tab) (push (list url new-tab) opened)))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) (error "Asked for input"))))
+      (lispm-browser-extensions-store)
+      (should (equal opened '(("https://store.example/" t)))))))
 
 (provide 'lispm-browser-test)
 ;;; lispm-browser-test.el ends here
