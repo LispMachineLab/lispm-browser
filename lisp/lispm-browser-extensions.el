@@ -210,6 +210,36 @@ Its output is in the *lispm-browser-webext build* buffer."
             (mapc #'funcall waiting))
         (message "lispm-browser-webext could not be built: see *lispm-browser-webext build*")))))
 
+(defun lispm-browser-extensions-module-loaded-p ()
+  "Return non-nil once the module is loaded."
+  (featurep 'lispm-browser-webext-module))
+
+(defun lispm-browser-extensions--load ()
+  "Load the module when it is built; return non-nil once it is loaded."
+  (or (lispm-browser-extensions-module-loaded-p)
+      (when-let* (((lispm-browser-extensions-supported-p))
+                  ((fboundp 'module-load))
+                  ((not (process-live-p lispm-browser-extensions--building)))
+                  (file (lispm-browser-extensions--module-file)))
+        (module-load file)
+        t)))
+
+(defun lispm-browser-extensions-with-module (then)
+  "Call THEN once the module is loaded: at once when it is, or is built and
+current; else after building it in the background, when Swift is here.
+Where the module cannot run, THEN is never called.  The module is loaded
+only; its extension host starts apart, see
+`lispm-browser-extensions-setup'."
+  (cond ((lispm-browser-extensions-module-loaded-p) (funcall then))
+        ((not (lispm-browser-extensions-supported-p)) nil)
+        ((and (lispm-browser-extensions--module-file) (not (lispm-browser-extensions--stale-p)))
+         (when (lispm-browser-extensions--load) (funcall then)))
+        ((executable-find "swift")
+         (lispm-browser-extensions-build (lambda () (when (lispm-browser-extensions--load) (funcall then)))))
+        ;; Changed sources and no Swift to build them: the module built
+        ;; before runs still.
+        ((lispm-browser-extensions--load) (funcall then))))
+
 (defvar lispm-browser-extensions--started nil
   "Non-nil once the module's extension host runs.")
 
@@ -217,12 +247,8 @@ Its output is in the *lispm-browser-webext build* buffer."
   "Load the module and start its extension host when it is built; return
 non-nil once it runs.  Pages already open run no extensions."
   (or lispm-browser-extensions--started
-      (when-let* (((lispm-browser-extensions-supported-p))
-                  ((fboundp 'module-load))
-                  ((not (process-live-p lispm-browser-extensions--building)))
-                  (file (lispm-browser-extensions--module-file)))
-        (unless (featurep 'lispm-browser-webext-module)
-          (module-load file))
+      (when (and (not (process-live-p lispm-browser-extensions--building))
+                 (lispm-browser-extensions--load))
         (make-directory lispm-browser-extensions-directory t)
         (lispm-browser-webext-module-start (expand-file-name lispm-browser-extensions-directory))
         (add-hook 'kill-emacs-hook #'lispm-browser-extensions--stop)

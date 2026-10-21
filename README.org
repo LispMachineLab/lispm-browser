@@ -79,6 +79,11 @@ applications, drawn as Netscape Communicator's window was on Mac OS 9.
   objects the garbage collector does not see.  The browser keeps a closed page's xwidgets from
   the collector until WebKit is done with them, drops the late events of closed pages, and keeps
   every script's callback until WebKit calls it (~lispm-browser-run-script~).
+- *A proxy*, HTTP or SOCKS5, the pages load through:
+  ~(lispm-browser-set-proxy "socks5://127.0.0.1:7890")~, or =M-x lispm-browser-set-proxy=.
+  WebKit, not Emacs, makes the pages' connections, so url.el's proxy and the environment's
+  =http_proxy= do not reach them; the Swift module hands WebKit the proxy (on macOS, built for
+  it when missing), and ~lispm-browser-proxy-exceptions~ are reached directly.
 
 * Installation
 

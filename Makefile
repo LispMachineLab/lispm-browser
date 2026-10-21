@@ -1,7 +1,7 @@
 EMACS ?= emacs
 # The sources, in lisp/, in the order they require each other.
 ELS = $(addprefix lisp/,lispm-browser.el lispm-browser-places.el lispm-browser-hints.el \
-      lispm-browser-extensions.el)
+      lispm-browser-extensions.el lispm-browser-proxy.el)
 
 .PHONY: all compile test webext webext-test clean
 

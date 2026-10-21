@@ -21,13 +21,15 @@
 // kind and a JSON payload, since Emacs gives a module no way to call Lisp
 // on its own:
 //
-//   Lisp --functions--> module: install, run an action, which page is in front
+//   Lisp --functions--> module: install, run an action, which page is in front,
+//                               the proxy the pages load through
 //   WebKit --delegate--> Host --channel--> (lispm-browser-webext--event KIND JSON)
 //        questions and new tabs wait for (lispm-browser-webext-module-answer ID VALUE)
 
 import AppKit
 import EmacsSwiftModule
 import WebKit
+import WebextCore
 
 final class WebextModule: Module {
     let isGPLCompatible = true
@@ -202,6 +204,24 @@ final class WebextModule: Module {
             with: "Close the extension popup that is up."
         ) { () in
             MainActor.assumeIsolated { Popup.shared.close() }
+        }
+        try env.defun(
+            "lispm-browser-webext-module-proxy",
+            with: """
+            Make the pages load through the proxy of KIND at HOST and PORT,
+            KIND "http" or "socks5", the hosts of EXCEPTIONS, separated by
+            commas, reached directly; or directly when KIND is "none".  It
+            needs no extension host: Emacs's page views share WebKit's
+            default website data store, which takes the proxy.
+
+            (fn KIND HOST PORT EXCEPTIONS)
+            """
+        ) { (kind: String, host: String, port: Int, exceptions: String) in
+            MainActor.assumeIsolated {
+                WKWebsiteDataStore.default().proxyConfigurations =
+                    PageProxy.configuration(kind: kind, host: host, port: port, exceptions: exceptions)
+                        .map { [$0] } ?? []
+            }
         }
         try env.funcall("provide", with: Symbol(name: "lispm-browser-webext-module"))
     }
