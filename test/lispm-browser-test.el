@@ -70,18 +70,38 @@ the chrome says otherwise, and a killed one leaves them."
         (mapc #'kill-buffer (seq-filter #'buffer-live-p (list a b)))))))
 
 (ert-deftest lispm-browser-test-plain-tab-line ()
-  "The tab line has a tab per page, its own drawn in front, then +."
+  "The tab line has a tab per page, its own drawn in front, each with a
+button closing it, then +.  A middle click on a tab closes it too."
   (let ((lispm-browser--tab-order nil)
         (a (generate-new-buffer "*xwidget webkit: Alpha*"))
-        (b (generate-new-buffer "*xwidget webkit: Beta*")))
+        (b (generate-new-buffer "*xwidget webkit: Beta*"))
+        (closed nil))
     (unwind-protect
         (cl-letf (((symbol-function 'lispm-browser-favicon) #'ignore)
-                  ((symbol-function 'lispm-browser-uri) #'ignore))
+                  ((symbol-function 'lispm-browser-uri) #'ignore)
+                  ((symbol-function 'icon-string) (lambda (_) " x"))
+                  ((symbol-function 'lispm-browser-close-tab) (lambda (buffer) (push buffer closed))))
           (setq lispm-browser--tab-order (list a b))
-          (let ((line (with-current-buffer b (lispm-browser-tab-line))))
-            (should (equal (substring-no-properties line) " Alpha  Beta  + "))
+          (let* ((line (with-current-buffer b (lispm-browser-tab-line)))
+                 (press (lambda (position key)
+                          (funcall (keymap-lookup (get-text-property position 'keymap line)
+                                                  (concat "<tab-line> " key))))))
+            (should (equal (substring-no-properties line) " Alpha x  Beta x  + "))
             (should (eq (get-text-property 1 'face line) 'tab-line-tab-inactive))
-            (should (eq (get-text-property 8 'face line) 'tab-line-tab-current))))
+            (should (eq (get-text-property 10 'face line) 'tab-line-tab-current))
+            ;; The close buttons, in their tab's face.
+            (should (equal (get-text-property 7 'help-echo line) "Close this tab"))
+            (should (memq 'tab-line-tab-inactive (ensure-list (get-text-property 7 'face line))))
+            (should (memq 'tab-line-tab-current (ensure-list (get-text-property 15 'face line))))
+            (funcall press 7 "<mouse-1>")
+            (funcall press 15 "<mouse-1>")
+            (should (equal closed (list b a)))
+            ;; A middle click on Alpha's label closes it; a click shows it.
+            (setq closed nil)
+            (funcall press 2 "<mouse-2>")
+            (should (equal closed (list a)))
+            (should (eq (keymap-lookup (get-text-property 2 'keymap line) "<tab-line> <mouse-1>")
+                        (keymap-lookup (get-text-property 8 'keymap line) "<tab-line> <mouse-1>")))))
       (mapc #'kill-buffer (list a b)))))
 
 (ert-deftest lispm-browser-test-open-url-goes-through-the-chrome ()
@@ -131,6 +151,30 @@ Quitting tells the chrome before the tabs close and after."
           (should (equal (reverse calls) '((before 2) (after 0))))
           (should-not (seq-some #'buffer-live-p (list a b))))
       (mapc #'kill-buffer (seq-filter #'buffer-live-p (list a b))))))
+
+(ert-deftest lispm-browser-test-closing-a-tab-shows-its-neighbour ()
+  "Closing the shown tab shows the one after it, or the one before when it
+was the last, as Chrome does; closing a tab behind leaves the shown one."
+  (let* ((lispm-browser--tab-order nil)
+         (a (generate-new-buffer " a"))
+         (b (generate-new-buffer " b"))
+         (c (generate-new-buffer " c"))
+         (d (generate-new-buffer " d"))
+         (lispm-browser-window-function #'selected-window))
+    (unwind-protect
+        (save-window-excursion
+          (setq lispm-browser--tab-order (list a b c d))
+          (switch-to-buffer b)
+          (lispm-browser-close-tab b)
+          (should (eq (window-buffer) c))
+          (lispm-browser-close-tab a)
+          (should (eq (window-buffer) c))
+          (should (equal (lispm-browser-tabs) (list c d)))
+          (switch-to-buffer d)
+          (lispm-browser-close-tab d)
+          (should (eq (window-buffer) c))
+          (should (equal (lispm-browser-tabs) (list c))))
+      (mapc #'kill-buffer (seq-filter #'buffer-live-p (list a b c d))))))
 
 ;;;; History and bookmarks
 
