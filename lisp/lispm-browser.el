@@ -40,7 +40,8 @@
 ;;   M-x lispm-browser-browse-url      open an address
 ;;
 ;; Out of the box a page shows its tabs in its tab line, a click choosing
-;; one, and takes the keys of `lispm-browser-keys'.  A program giving the
+;; one, its close button or a middle click closing it, and takes the keys
+;; of `lispm-browser-keys'.  A program giving the
 ;; browser a look of its own, as LispM Desktop draws Netscape Communicator's
 ;; window, says where it is through these variables and hooks:
 ;;
@@ -393,13 +394,19 @@ It opens in the browser's window, or else in the window of
   (run-hooks 'lispm-browser-quit-hook))
 
 (defun lispm-browser-close-tab (buffer)
-  "Close tab BUFFER without asking, then show another tab.
-Closing the last tab quits the browser, see `lispm-browser-quit'."
-  (let ((window (lispm-browser-window))
-        (kill-buffer-query-functions nil))
+  "Close tab BUFFER without asking.
+Closing a tab behind leaves the shown tab shown; closing the shown tab
+shows the one after it, or the one before when it was the last, as
+Chrome does.  Closing the last tab quits the browser, see
+`lispm-browser-quit'."
+  (let* ((window (lispm-browser-window))
+         (shown (and window (window-buffer window)))
+         (index (or (seq-position (lispm-browser-tabs) buffer) 0))
+         (kill-buffer-query-functions nil))
     (kill-buffer buffer)
-    (if-let* ((next (car (lispm-browser-tabs))))
-        (when (window-live-p window) (set-window-buffer window next))
+    (if-let* ((tabs (lispm-browser-tabs)))
+        (when (and (eq buffer shown) (window-live-p window))
+          (set-window-buffer window (nth (min index (1- (length tabs))) tabs)))
       (lispm-browser-quit)))
   (lispm-browser--changed))
 
@@ -540,12 +547,21 @@ was not looked up yet has its lookup started."
   "Return an interactive command applying FUNCTION to ARGS."
   (lambda () (interactive) (apply function args)))
 
-(defun lispm-browser-tab-keymap (command)
-  "Return the keymap of a tab in a tab line, running COMMAND when clicked."
+(defun lispm-browser-tab-keymap (command &optional close)
+  "Return the keymap of a tab in a tab line, running COMMAND when clicked.
+CLOSE, when given, runs on a middle click, as a middle click closes a tab
+in Emacs's own tab line and in Chrome."
   (let ((map (make-sparse-keymap)))
     (keymap-set map "<tab-line> <down-mouse-1>" #'ignore)
     (keymap-set map "<tab-line> <mouse-1>" command)
+    (when close
+      (keymap-set map "<tab-line> <down-mouse-2>" #'ignore)
+      (keymap-set map "<tab-line> <mouse-2>" close))
     map))
+
+(defun lispm-browser-tab-close-command (buffer)
+  "Return the command closing tab BUFFER, for its close button."
+  (lispm-browser-tab-command #'lispm-browser-close-tab buffer))
 
 (defun lispm-browser--tab-label (buffer)
   "Return the label of tab BUFFER: its page's icon, when known, and title."
@@ -559,19 +575,36 @@ was not looked up yet has its lookup started."
 the toolbar's buttons of the extensions, once they run (see
 `lispm-browser-extensions-tab-line-buttons').")
 
+(defun lispm-browser--tab-close-button (buffer face)
+  "Return the button closing tab BUFFER, in the tab's FACE.
+It is the icon of Emacs's own tab line, `tab-line-close'."
+  (let ((button (copy-sequence (icon-string 'tab-line-close)))
+        (close (lispm-browser-tab-close-command buffer)))
+    (add-face-text-property 0 (length button) face t button)
+    (propertize button
+                'mouse-face 'tab-line-close-highlight 'pointer 'arrow
+                'keymap (lispm-browser-tab-keymap close close)
+                'help-echo "Close this tab")))
+
 (defun lispm-browser-tab-line ()
   "Return the tab line of the page being drawn: a tab per page, its own in
-front, then + for a new one, and what `lispm-browser-tab-line-end-function'
-puts at the right end."
+front, each with a button closing it, then + for a new one, and what
+`lispm-browser-tab-line-end-function' puts at the right end.  A middle
+click on a tab closes it too."
   (let ((shown (current-buffer)))
     (concat
      (mapconcat (lambda (buffer)
-                  (propertize (concat " " (lispm-browser--tab-label buffer) " ")
-                              'face (if (eq buffer shown) 'tab-line-tab-current 'tab-line-tab-inactive)
-                              'mouse-face 'tab-line-highlight 'pointer 'arrow
-                              'keymap (lispm-browser-tab-keymap
-                                       (lispm-browser-tab-command #'lispm-browser-select-tab buffer))
-                              'help-echo (or (lispm-browser-uri buffer) "Show this tab")))
+                  (let ((face (if (eq buffer shown) 'tab-line-tab-current 'tab-line-tab-inactive))
+                        (properties
+                         (list 'mouse-face 'tab-line-highlight 'pointer 'arrow
+                               'keymap (lispm-browser-tab-keymap
+                                        (lispm-browser-tab-command #'lispm-browser-select-tab buffer)
+                                        (lispm-browser-tab-close-command buffer))
+                               'help-echo (or (lispm-browser-uri buffer) "Show this tab"))))
+                    (concat (apply #'propertize (concat " " (lispm-browser--tab-label buffer))
+                                   'face face properties)
+                            (lispm-browser--tab-close-button buffer face)
+                            (apply #'propertize " " 'face face properties))))
                 (lispm-browser-tabs) "")
      (propertize " + " 'face 'tab-line-tab-inactive 'mouse-face 'tab-line-highlight 'pointer 'arrow
                  'keymap (lispm-browser-tab-keymap #'lispm-browser-new-tab)

@@ -35,7 +35,8 @@ their module the first time one is added.
 
 * Features
 
-- *Tabs*: every page is a tab with its page's icon, in a tab line.  Closing the last one quits.
+- *Tabs*: every page is a tab with its page's icon and a close button, in a tab line; a middle click
+  closes a tab too.  Closing the shown tab shows its neighbour, closing the last one quits.
 - *History and bookmarks*: pages visited go to ~lispm-browser-history-file~; bookmarks are
   Emacs's own (=bookmark.el=), so =bookmark-jump= opens them too.  =C-l= completes addresses
   from both and searches for anything else (~lispm-browser-search-url~).
