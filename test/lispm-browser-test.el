@@ -34,6 +34,7 @@
 (require 'lispm-browser-places)
 (require 'lispm-browser-hints)
 (require 'lispm-browser-extensions)
+(require 'lispm-browser-proxy)
 
 (defvar xwidget-list)
 
@@ -722,6 +723,99 @@ shown again, at an extension's details when asked."
                (lambda (&rest _) (error "Asked for input"))))
       (lispm-browser-extensions-store)
       (should (equal opened '(("https://store.example/" t)))))))
+
+;;;; The proxy
+
+(ert-deftest lispm-browser-test-proxy-parse ()
+  "A proxy is named by its URL: HTTP, or SOCKS5 whether or not it says it
+looks names up; anything else names none."
+  (should (equal (lispm-browser-proxy-parse "http://127.0.0.1:7890") '("http" "127.0.0.1" 7890)))
+  (should (equal (lispm-browser-proxy-parse "socks5://proxy.example:1080/") '("socks5" "proxy.example" 1080)))
+  (should (equal (lispm-browser-proxy-parse "socks5h://[::1]:1080") '("socks5" "::1" 1080)))
+  (should-not (lispm-browser-proxy-parse nil))
+  (should-not (lispm-browser-proxy-parse "127.0.0.1:7890"))
+  (should-not (lispm-browser-proxy-parse "ftp://127.0.0.1:21"))
+  (should-not (lispm-browser-proxy-parse "http://127.0.0.1:0"))
+  (should-not (lispm-browser-proxy-parse "http://127.0.0.1:70000")))
+
+(defmacro lispm-browser-test--with-proxy-module (calls &rest body)
+  "Run BODY with the module loaded, its proxy calls pushed onto CALLS."
+  (declare (indent 1))
+  `(let ((lispm-browser-proxy nil)
+         (lispm-browser-proxy-exceptions '("localhost"))
+         (lispm-browser-proxy--followed nil))
+     (cl-letf (((symbol-function 'lispm-browser-extensions-module-loaded-p) #'always)
+               ((symbol-function 'lispm-browser-webext-module-proxy)
+                (lambda (&rest args) (push args ,calls))))
+       ,@body)))
+
+(ert-deftest lispm-browser-test-proxy-handed-to-the-module ()
+  "The module, once loaded, is handed the proxy at once, and none when it
+is taken away."
+  (let ((calls nil))
+    (lispm-browser-test--with-proxy-module calls
+      (should (lispm-browser-proxy-followed-p))
+      (lispm-browser-set-proxy "socks5h://127.0.0.1:7890" '("localhost" "intranet.example"))
+      (should (equal (car calls) '("socks5" "127.0.0.1" 7890 "localhost,intranet.example")))
+      (should (lispm-browser-proxy-followed-p))
+      (lispm-browser-set-proxy nil)
+      (should (equal (car calls) '("none" "" 0 "localhost,intranet.example")))
+      (should (lispm-browser-proxy-followed-p)))))
+
+(ert-deftest lispm-browser-test-proxy-waits-for-the-module ()
+  "Without the module, a proxy waits for it to be loaded, built first when
+need be; no proxy needs no module.  A module older than proxies cannot
+follow one."
+  (let ((lispm-browser-proxy nil)
+        (lispm-browser-proxy--followed nil)
+        (loaded nil)
+        (waiting nil))
+    (cl-letf (((symbol-function 'lispm-browser-extensions-module-loaded-p) (lambda () loaded))
+              ((symbol-function 'lispm-browser-extensions-with-module)
+               (lambda (then) (push then waiting))))
+      (lispm-browser-set-proxy nil)
+      (should-not waiting)
+      (should (lispm-browser-proxy-followed-p))
+      (lispm-browser-set-proxy "http://127.0.0.1:7890")
+      (should (equal waiting (list #'lispm-browser-proxy--hand-over)))
+      (should-not (lispm-browser-proxy-followed-p))
+      ;; Loaded, but built before it took proxies.
+      (setq loaded t)
+      (should-not (funcall (car waiting)))
+      (should-not (lispm-browser-proxy-followed-p)))))
+
+(ert-deftest lispm-browser-test-extensions-module-loaded-once-current ()
+  "The module is loaded as built when current, built first when its sources
+changed and Swift is here, and loaded as it is when Swift is not; nowhere
+when it cannot run."
+  (let ((loaded nil) (built nil) (called 0)
+        (supported t) (file "/m.dylib") (stale nil) (swift t))
+    (cl-letf (((symbol-function 'lispm-browser-extensions-module-loaded-p) #'ignore)
+              ((symbol-function 'lispm-browser-extensions-supported-p) (lambda () supported))
+              ((symbol-function 'lispm-browser-extensions--module-file) (lambda () file))
+              ((symbol-function 'lispm-browser-extensions--stale-p) (lambda () stale))
+              ((symbol-function 'executable-find) (lambda (_) swift))
+              ((symbol-function 'lispm-browser-extensions-build) (lambda (then) (push then built)))
+              ((symbol-function 'module-load) (lambda (file) (push file loaded))))
+      (let ((then (lambda () (setq called (1+ called)))))
+        (lispm-browser-extensions-with-module then)
+        (should (equal loaded '("/m.dylib")))
+        (should (= called 1))
+        (setq loaded nil stale t)
+        (lispm-browser-extensions-with-module then)
+        (should-not loaded)
+        (should (= (length built) 1))
+        (funcall (car built))
+        (should (equal loaded '("/m.dylib")))
+        (should (= called 2))
+        (setq loaded nil swift nil)
+        (lispm-browser-extensions-with-module then)
+        (should (equal loaded '("/m.dylib")))
+        (should (= called 3))
+        (setq loaded nil supported nil)
+        (lispm-browser-extensions-with-module then)
+        (should-not loaded)
+        (should (= called 3))))))
 
 (provide 'lispm-browser-test)
 ;;; lispm-browser-test.el ends here
