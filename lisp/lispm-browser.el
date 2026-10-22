@@ -103,9 +103,11 @@
 ;;;; Addresses
 
 (defun lispm-browser-available-p ()
-  "Return non-nil when this Emacs can show WebKit pages: built with xwidgets."
+  "Return non-nil when this Emacs can show WebKit pages: built with xwidgets,
+on a graphical display, as a text terminal draws none."
   (and (featurep 'xwidget-internal)
-       (fboundp 'xwidget-webkit-browse-url)))
+       (fboundp 'xwidget-webkit-browse-url)
+       (display-graphic-p)))
 
 (defun lispm-browser-normalize-url (url)
   "Return URL with a scheme, https when it names none."
@@ -250,7 +252,9 @@ See `lispm-browser-show-function'."
   "Show the browser, see `lispm-browser-show'."
   (interactive)
   (unless (lispm-browser-available-p)
-    (user-error "This Emacs has no WebKit pages: it was built without xwidgets"))
+    (if (featurep 'xwidget-internal)
+        (user-error "WebKit pages show only on a graphical display, not on a text terminal")
+      (user-error "This Emacs has no WebKit pages: it was built without xwidgets")))
   (lispm-browser-show))
 
 ;;;; Navigation
