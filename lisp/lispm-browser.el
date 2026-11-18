@@ -4,7 +4,7 @@
 
 ;; Author: Ryan.K
 ;; URL: https://github.com/LispMachineLab/lispm-browser
-;; Version: 0.4.0
+;; Version: 0.4.1
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: hypermedia, comm
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -127,12 +127,12 @@ address; anything else is a search, see `lispm-browser-search-url'."
          (lispm-browser-normalize-url input))
         (t (format lispm-browser-search-url (url-hexify-string input)))))
 
-(defun lispm-browser-browse-url (url &rest _)
+(defun lispm-browser-browse-url (url &optional new-window &rest _)
   "Open URL in a WebKit page when this Emacs has them, else in the system's
 browser.  It also serves as a `browse-url-browser-function'."
   (interactive (list (read-string "URL: " (or (thing-at-point-url-at-point) ""))))
   (if (lispm-browser-available-p)
-      (xwidget-webkit-browse-url (lispm-browser-normalize-url url))
+      (lispm-browser-open-url (lispm-browser-normalize-url url) new-window)
     (browse-url-default-browser (lispm-browser-normalize-url url))))
 
 (defun lispm-browser-web-search (query)
@@ -314,8 +314,9 @@ when none is shown.  The browser comes in front."
              (xwidget-webkit-goto-uri (xwidget-at (point-min)) url))
            (lispm-browser--changed))
           (window (lispm-browser-new-tab url))
-          (t (lispm-browser-show)
-             (lispm-browser-open-url url)))
+          (t (let ((had-tabs (and (lispm-browser-tabs) t)))
+               (lispm-browser-show)
+               (lispm-browser-open-url url (and new-tab had-tabs)))))
     (funcall lispm-browser-raise-function)))
 
 (defun lispm-browser-open-external ()
