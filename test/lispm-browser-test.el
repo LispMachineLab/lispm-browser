@@ -118,7 +118,12 @@ visits it in the page shown, and brings the browser in front."
                (lambda (_xwidget url) (push (list 'go url) calls))))
       (lispm-browser-open-url "https://example.org/")
       (should (equal (reverse calls)
-                     '(show (go "https://example.org/") changed raise raise))))))
+                     '(show (go "https://example.org/") changed raise raise)))
+      (setq window nil calls nil)
+      (cl-letf (((symbol-function 'lispm-browser-available-p) (lambda () t)))
+        (lispm-browser-browse-url "example.org/path")
+        (should (equal (reverse calls)
+                       '(show (go "https://example.org/path") changed raise raise)))))))
 
 (ert-deftest lispm-browser-test-closing-the-last-tab-quits ()
   "Closing a tab shows the next; closing the last quits the browser.
